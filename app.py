@@ -6,6 +6,7 @@ from system_prompt import agent_role
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
+llm_model = os.getenv("LLM_MODEL")
 llm_client = genai.Client(api_key=api_key)
 
 
@@ -17,7 +18,7 @@ def responder(user_message, chat):
         return chat, ""
 
     response = llm_client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=llm_model
         contents=f"""
 
             {agent_role}
@@ -46,7 +47,7 @@ def es_consulta_cocina(user_message):
     """
 
     response = llm_client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=llm_model,
         contents=prompt
     )
 
