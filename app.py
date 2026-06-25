@@ -35,14 +35,14 @@ def responder(user_message, chat):
 
     return chat, ""
 
-def es_consulta_cocina(texto):
+def es_consulta_cocina(user_message):
     prompt = f"""
     Responde únicamente SI o NO.
 
     ¿La siguiente consulta está relacionada con cocina,
     recetas, ingredientes o alimentación?
 
-    Consulta: {texto}
+    Consulta: {user_message}
     """
 
     response = llm_client.models.generate_content(
