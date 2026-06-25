@@ -38,10 +38,4 @@ agent_role = f"""
 
     Mantener la respuesta breve y práctica.
 
-    LONGITUD
-
-    * Máximo 150 palabras.
-    * Máximo 6 pasos de preparación.
-    * Evitar explicaciones innecesarias.
-
 """
