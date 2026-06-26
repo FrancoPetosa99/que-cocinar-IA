@@ -18,7 +18,7 @@ def responder(user_message, chat):
         return chat, ""
 
     response = llm_client.models.generate_content(
-        model=llm_model
+        model=llm_model,
         contents=f"""
 
             {agent_role}
