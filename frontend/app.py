@@ -8,12 +8,15 @@ from pathlib import Path
 
 import gradio as gr
 
-# Allow running as `python frontend/app.py` from project root
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.pipeline import stream_query  # noqa: E402
+
+from backend.pipeline import stream_query
+from styles import KITCHEN_CSS
+from cuisine_tree import build_cuisine_tree
 
 
 def _warmup_backend() -> None:
@@ -42,125 +45,6 @@ def _warmup_backend() -> None:
     except Exception as exc:
         print(f"⚠️ No se pudo precargar el backend: {exc}")
 
-KITCHEN_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Pacifico&family=Nunito:wght@400;600;700&display=swap');
-
-:root {
-    --cream: #faf6f0;
-    --wood: #8b5e3c;
-    --terracotta: #c45c26;
-    --tomato: #d94f30;
-    --herb: #5a8f5a;
-    --butter: #f4d58d;
-    --chalk: #2d3436;
-}
-
-.gradio-container {
-    background: var(--cream) !important;
-    background-image:
-        linear-gradient(90deg, rgba(200,200,200,0.08) 1px, transparent 1px),
-        linear-gradient(rgba(200,200,200,0.08) 1px, transparent 1px) !important;
-    background-size: 24px 24px !important;
-    font-family: 'Nunito', sans-serif !important;
-}
-
-.kitchen-header {
-    text-align: center;
-    padding: 1.5rem 1rem 0.5rem;
-    background: linear-gradient(135deg, #3d2914 0%, #5c3d1e 100%);
-    border-radius: 16px;
-    border: 4px solid var(--wood);
-    box-shadow: 0 6px 20px rgba(61, 41, 20, 0.25);
-    margin-bottom: 1rem;
-}
-
-.kitchen-header h1 {
-    font-family: 'Pacifico', cursive !important;
-    color: var(--butter) !important;
-    font-size: 2.4rem !important;
-    margin: 0 !important;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-}
-
-.kitchen-header p {
-    color: #f5e6d3 !important;
-    margin: 0.4rem 0 0.8rem !important;
-    font-size: 1rem !important;
-}
-
-.kitchen-garnish {
-    text-align: center;
-    color: var(--wood);
-    font-size: 1.1rem;
-    padding: 0.5rem;
-    opacity: 0.85;
-}
-
-/* Recipe card chatbot */
-#kitchen-chat {
-    border: 3px solid var(--wood) !important;
-    border-radius: 16px !important;
-    background: #fffef9 !important;
-    box-shadow: 0 8px 24px rgba(139, 94, 60, 0.15) !important;
-}
-
-#kitchen-chat .message.user {
-    background: linear-gradient(135deg, #4a4a4a 0%, #2d3436 100%) !important;
-    color: #f8f8f8 !important;
-    border-radius: 12px 12px 4px 12px !important;
-}
-
-#kitchen-chat .message.bot {
-    background: linear-gradient(180deg, #fffef9 0%, #f9f3e8 100%) !important;
-    border: 1px solid #e8dcc8 !important;
-    border-radius: 12px 12px 12px 4px !important;
-    color: var(--chalk) !important;
-}
-
-/* Sticky-note input */
-#kitchen-input textarea {
-    background: #fff9c4 !important;
-    border: 2px dashed var(--butter) !important;
-    border-radius: 8px !important;
-    font-family: 'Nunito', sans-serif !important;
-    box-shadow: 2px 3px 8px rgba(0,0,0,0.08) !important;
-}
-
-#kitchen-input textarea::placeholder {
-    color: #9a8b6e !important;
-}
-
-/* Cook button */
-#cook-btn {
-    background: linear-gradient(180deg, var(--tomato) 0%, var(--terracotta) 100%) !important;
-    border: 2px solid #a63d1f !important;
-    color: white !important;
-    font-weight: 700 !important;
-    font-size: 1.1rem !important;
-    border-radius: 12px !important;
-    box-shadow: 0 4px 12px rgba(196, 92, 38, 0.4) !important;
-    transition: transform 0.15s ease !important;
-}
-
-#cook-btn:hover {
-    transform: scale(1.02) !important;
-    box-shadow: 0 6px 16px rgba(196, 92, 38, 0.5) !important;
-}
-
-/* Example chips */
-.examples button {
-    background: #fff !important;
-    border: 2px solid var(--herb) !important;
-    color: var(--herb) !important;
-    border-radius: 20px !important;
-    font-size: 0.9rem !important;
-}
-
-.examples button:hover {
-    background: var(--herb) !important;
-    color: white !important;
-}
-"""
 
 EXAMPLES = [
     "Tengo pollo, ¿qué puedo cocinar?",
@@ -171,6 +55,12 @@ EXAMPLES = [
     "Tengo tomate, queso y pan",
     "Solo tengo huevo y papa",
 ]
+
+# Árbol de categorías para el sidebar, construido a partir de cuisine_path
+# en data/recipes.csv. Es solo para UI: no afecta el flujo del chatbot.
+# Estructura: { categoria: { subcategoria: [RecipeEntry(name, image_url), ...] } }
+RECIPES_CSV_PATH = PROJECT_ROOT / "data" / "recipes.csv"
+CUISINE_TREE = build_cuisine_tree(RECIPES_CSV_PATH)
 
 _session_threads: dict[str, str] = {}
 
@@ -239,37 +129,128 @@ def create_app() -> gr.Blocks:
     chef_avatar = str(assets_dir / "logo.png") if (assets_dir / "logo.png").exists() else None
 
     with gr.Blocks(title="Qué Cocinar IA") as demo:
-        gr.HTML(
-            """
-            <div class="kitchen-header">
-                <h1>🍳 Qué Cocinar IA</h1>
-                <p>Tu asistente inteligente de cocina — recetas, sustituciones y más</p>
-            </div>
-            """
-        )
-
-        chatbot = gr.Chatbot(
-            elem_id="kitchen-chat",
-            height=520,
-            avatar_images=(user_avatar, chef_avatar),
-            show_label=False,
-        )
+        # ------------------------------------------------------------
+        # Header + barra de controles (tema / mostrar-ocultar sidebar).
+        # Los botones se posicionan arriba a la derecha (vía CSS, ver
+        # #top-controls-row en styles.py) en vez de vivir dentro del
+        # sidebar, donde antes lo ensanchaban y lo hacían incómodo.
+        # ------------------------------------------------------------
+        with gr.Column(elem_classes=["kitchen-header-wrap"]):
+            gr.HTML(
+                """
+                <div class="kitchen-header">
+                    <h1>🍳 Qué Cocinar IA</h1>
+                    <p>Tu asistente inteligente de cocina — recetas, sustituciones y más</p>
+                </div>
+                """
+            )
+            with gr.Row(elem_id="top-controls-row"):
+                sidebar_toggle_btn = gr.Button(
+                    "Menú",
+                    elem_id="sidebar-toggle-btn",
+                    elem_classes=["icon-btn"],
+                    size="sm",
+                    icon=None,
+                )
+                theme_toggle_btn = gr.Button(
+                    "Tema",
+                    elem_id="theme-toggle-btn",
+                    elem_classes=["icon-btn"],
+                    size="sm",
+                    icon=None,
+                )
 
         with gr.Row():
-            msg_input = gr.Textbox(
-                elem_id="kitchen-input",
-                placeholder="🍴 Contame qué ingredientes tenés o qué querés cocinar...",
-                scale=5,
-                show_label=False,
-                container=False,
-            )
-            cook_btn = gr.Button("👨‍🍳 Cocinar", elem_id="cook-btn", scale=1, variant="primary")
+            # ------------------------------------------------------------
+            # Sidebar de categorías (basado en cuisine_path), de 3 niveles:
+            #   Categoría (Accordion) -> Subcategoría (Accordion anidado)
+            #   -> Recetas (Gallery con imagen + nombre).
+            # Solo UI: al elegir una receta, dispara directamente la consulta
+            # al chat sin mostrar ningún detalle previo.
+            # ------------------------------------------------------------
+            with gr.Column(scale=1, min_width=220, elem_id="cuisine-sidebar-col") as sidebar_col:
+                sidebar_visible = gr.State(True)
+                with gr.Column(elem_id="cuisine-sidebar"):
+                    gr.Markdown("**🍽️ Categorías de recetas**")
 
-        gr.Examples(
-            examples=EXAMPLES,
-            inputs=msg_input,
-            label="🥕 Ideas para empezar",
-        )
+                    subcat_fallback_buttons: list[tuple[gr.Button, str, str]] = []
+                    recipe_galleries: list[tuple[gr.Gallery, list[str]]] = []
+
+                    if CUISINE_TREE:
+                        for root_category, subcategories in CUISINE_TREE.items():
+                            with gr.Accordion(root_category, open=False):
+                                if subcategories:
+                                    for subcat, recipes in subcategories.items():
+                                        with gr.Accordion(
+                                            subcat,
+                                            open=False,
+                                            elem_classes=["cuisine-subcat-accordion"],
+                                        ):
+                                            if recipes:
+                                                gallery_items = [
+                                                    (r.image_url, r.name)
+                                                    for r in recipes
+                                                    if r.image_url
+                                                ]
+                                                recipe_names = [
+                                                    r.name for r in recipes if r.image_url
+                                                ]
+                                                if gallery_items:
+                                                    gallery = gr.Gallery(
+                                                        value=gallery_items,
+                                                        label=None,
+                                                        show_label=False,
+                                                        columns=1,
+                                                        height="auto",
+                                                        object_fit="contain",
+                                                        elem_classes=["cuisine-recipe-gallery"],
+                                                    )
+                                                    recipe_galleries.append((gallery, recipe_names))
+                                                else:
+                                                    gr.Markdown(
+                                                        f"_Sin imágenes disponibles para {subcat}_",
+                                                        elem_classes=["cuisine-subcat-btn"],
+                                                    )
+                                            else:
+                                                gr.Markdown(
+                                                    f"_Sin recetas cargadas para {subcat}_",
+                                                    elem_classes=["cuisine-subcat-btn"],
+                                                )
+                                else:
+                                    btn = gr.Button(
+                                        f"Ver recetas de {root_category}",
+                                        elem_classes=["cuisine-subcat-btn"],
+                                        size="sm",
+                                    )
+                                    subcat_fallback_buttons.append((btn, root_category, root_category))
+                    else:
+                        gr.Markdown(
+                            "_No se encontraron categorías (data/recipes.csv no disponible)._"
+                        )
+
+            with gr.Column(scale=4):
+                chatbot = gr.Chatbot(
+                    elem_id="kitchen-chat",
+                    height=520,
+                    avatar_images=(user_avatar, chef_avatar),
+                    show_label=False,
+                )
+
+                with gr.Row():
+                    msg_input = gr.Textbox(
+                        elem_id="kitchen-input",
+                        placeholder="🍴 Contame qué ingredientes tenés o qué querés cocinar...",
+                        scale=5,
+                        show_label=False,
+                        container=False,
+                    )
+                    cook_btn = gr.Button("👨‍🍳 Cocinar", elem_id="cook-btn", scale=1, variant="primary")
+
+                gr.Examples(
+                    examples=EXAMPLES,
+                    inputs=msg_input,
+                    label="🥕 Ideas para empezar",
+                )
 
         gr.HTML(
             '<div class="kitchen-garnish">🥕 🍅 🧄 🌿 Hecho con amor en la cocina</div>'
@@ -289,6 +270,67 @@ def create_app() -> gr.Blocks:
             inputs=[msg_input, chatbot],
             outputs=[chatbot, msg_input],
         )
+
+        # Toggle de visibilidad del sidebar (solo UI)
+        def _toggle_sidebar(is_visible: bool):
+            new_state = not is_visible
+            label = "Menú" if new_state else "Menú"
+            return gr.Column(visible=new_state), new_state, gr.Button(label)
+
+        sidebar_toggle_btn.click(
+            _toggle_sidebar,
+            inputs=[sidebar_visible],
+            outputs=[sidebar_col, sidebar_visible, sidebar_toggle_btn],
+        )
+
+        theme_toggle_btn.click(
+            None,
+            None,
+            None,
+            js="""
+            function() {
+                document.body.classList.toggle('dark');
+            }
+            """
+        )
+
+        # Botones fallback (categoría sin subcategorías): dispara directamente
+        # la consulta al chat sin pasar por el textbox.
+        for btn, root_category, subcat in subcat_fallback_buttons:
+            query_text = f"Quiero una receta de {subcat} ({root_category})"
+
+            def _make_respond_from_query(_query=query_text):
+                async def _respond_direct(history, request: gr.Request):
+                    async for updated in stream_response(_query, history, request):
+                        yield updated, ""
+                return _respond_direct
+
+            btn.click(
+                _make_respond_from_query(),
+                inputs=[chatbot],
+                outputs=[chatbot, msg_input],
+            )
+
+        # Galería de recetas (nivel 3): al seleccionar una imagen, dispara
+        # directamente la consulta al chat sin mostrar ningún detalle previo.
+        for gallery, recipe_names in recipe_galleries:
+
+            def _make_gallery_respond(_names=recipe_names):
+                async def _gallery_respond(evt: gr.SelectData, history, request: gr.Request):
+                    index = evt.index if evt is not None else None
+                    if index is None or index >= len(_names):
+                        yield history, ""
+                        return
+                    query = f"Quiero la receta de {_names[index]}"
+                    async for updated in stream_response(query, history, request):
+                        yield updated, ""
+                return _gallery_respond
+
+            gallery.select(
+                _make_gallery_respond(),
+                inputs=[chatbot],
+                outputs=[chatbot, msg_input],
+            )
 
     return demo, kitchen_theme
 
