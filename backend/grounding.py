@@ -12,7 +12,7 @@ RECIPE_ID_TAG = re.compile(r"\[csv_row_id=(\d+)\]")
 # Matches "csv_row_id=123" or "csv_row_id: 123" in the assistant reply
 CITATION_IN_RESPONSE = re.compile(r"csv_row_id\s*[=:]\s*(\d+)", re.IGNORECASE)
 RECIPE_NAME_IN_CITATION = re.compile(
-    r"nombre\s*[=:]\s*(.+?)(?:\n|$)", re.IGNORECASE
+    r"(?:nombre|name)\s*[=:]\s*(.+?)(?:\n|$)", re.IGNORECASE
 )
 
 

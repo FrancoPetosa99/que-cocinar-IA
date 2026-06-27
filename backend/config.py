@@ -10,7 +10,14 @@ load_dotenv()
 
 # Project paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CHROMA_DIR = os.getenv("CHROMA_DIR", str(PROJECT_ROOT / "chroma_db"))
+_chroma_env = os.getenv("CHROMA_DIR")
+if _chroma_env:
+    _chroma_path = Path(_chroma_env)
+    CHROMA_DIR = str(
+        _chroma_path if _chroma_path.is_absolute() else PROJECT_ROOT / _chroma_path
+    )
+else:
+    CHROMA_DIR = str(PROJECT_ROOT / "chroma_db")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "recipes")
 
 # LLM settings

@@ -15,6 +15,19 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.pipeline import stream_query  # noqa: E402
 
+
+def _warmup_backend() -> None:
+    """Load embeddings + Chroma once at startup (avoids ~10s hang on first message)."""
+    try:
+        from backend.config import CHROMA_DIR
+        from backend.database import get_vectorstore, reset_vectorstore
+
+        reset_vectorstore()  # always read fresh index from disk on startup
+        get_vectorstore()
+        print(f"✓ Base vectorial lista ({CHROMA_DIR})")
+    except Exception as exc:
+        print(f"⚠️ No se pudo precargar chroma_db: {exc}")
+
 KITCHEN_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Pacifico&family=Nunito:wght@400;600;700&display=swap');
 
@@ -267,5 +280,6 @@ def create_app() -> gr.Blocks:
 
 
 if __name__ == "__main__":
+    _warmup_backend()
     demo, theme = create_app()
     demo.queue().launch(theme=theme, css=KITCHEN_CSS)

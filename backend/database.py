@@ -30,6 +30,35 @@ RETRIEVAL_MAX_DISTANCE = float(
 )
 
 
+def reset_vectorstore() -> None:
+    """Clear cached Chroma handle (call after re-indexing chroma_db)."""
+    global _vectorstore
+    _vectorstore = None
+
+
+def _validate_collection_has_row_ids(store: Chroma) -> None:
+    """Ensure indexed recipes include csv_row_id (required for grounding)."""
+    try:
+        count = store._collection.count()  # noqa: SLF001
+        if count == 0:
+            raise ValueError("La colección ChromaDB está vacía.")
+        peek = store._collection.peek(1)  # noqa: SLF001
+        metas = peek.get("metadatas") or []
+        if not metas or "csv_row_id" not in (metas[0] or {}):
+            raise ValueError(
+                "El índice no tiene csv_row_id en metadata. "
+                "Ejecutá: python data_preprocessing/ingest.py "
+                "y reiniciá la app."
+            )
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(
+            "No se pudo validar chroma_db. "
+            "Ejecutá: python data_preprocessing/ingest.py"
+        ) from exc
+
+
 def get_vectorstore() -> Chroma:
     """Open (or create a cached handle to) the persisted Chroma collection."""
     global _vectorstore
@@ -44,7 +73,11 @@ def get_vectorstore() -> Chroma:
             embedding_function=get_embeddings(),
             persist_directory=CHROMA_DIR,
         )
+        _validate_collection_has_row_ids(_vectorstore)
     except Exception as exc:
+        _vectorstore = None
+        if isinstance(exc, ValueError):
+            raise
         raise ConnectionError(
             f"No se pudo conectar a ChromaDB en '{CHROMA_DIR}': {exc}"
         ) from exc

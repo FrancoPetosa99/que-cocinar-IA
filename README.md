@@ -49,8 +49,14 @@ LLM_MODEL=mistralai/Mistral-7B-Instruct-v0.3
 ### Indexar recetas
 
 1. Asegurate de tener el archivo `data/recipes.csv`.
-2. Abrí y ejecutá `data_preprocessing/preprocessing.ipynb` de principio a fin.
-3. Verificá que se creó la carpeta `chroma_db/`.
+2. **Recomendado** — desde la raíz del proyecto:
+   ```bash
+   python data_preprocessing/ingest.py
+   ```
+   Este script borra `chroma_db/` y re-indexa con `csv_row_id` en cada documento.
+3. Alternativa: ejecutá `data_preprocessing/preprocessing.ipynb` de principio a fin (la celda de ingest también borra el índice viejo).
+4. Verificá que se creó la carpeta `chroma_db/`.
+5. **Reiniciá** `python frontend/app.py` después de re-indexar.
 
 ## Cómo ejecutar
 
@@ -223,6 +229,20 @@ print(format_grounding_footer(validation))
 | ⚠️ NO VERIFICADO + id no coincide | El modelo citó un id que no recuperó |
 
 Contrastá siempre con `data/recipes.csv`: la fila cuya primera columna (`Unnamed: 0`) coincide con `csv_row_id` debe ser la misma receta.
+
+## Traducción ES ↔ EN (LCEL)
+
+El dataset está en **inglés**; el usuario escribe en **español**. El flujo usa LCEL en `backend/translation.py`:
+
+```
+Consulta (ES) → [LCEL: traducir a EN] → búsqueda ChromaDB + herramientas (EN) → [LCEL: traducir a ES] → respuesta al usuario
+```
+
+- **Pre-procesamiento:** `TRANSLATE_TO_ENGLISH_PROMPT | llm | StrOutputParser()`
+- **Post-procesamiento:** `TRANSLATE_TO_SPANISH_PROMPT | llm | StrOutputParser()`
+- **Prompts internos** (`agents.py`, herramientas scaling/substitution): todos en **inglés**
+- **Auditoría de fuente:** se genera en español después de validar la respuesta en inglés
+- Las líneas `csv_row_id=` no se traducen (se preservan en el post-proceso)
 
 ### Umbral de relevancia (`RETRIEVAL_MAX_DISTANCE`)
 
