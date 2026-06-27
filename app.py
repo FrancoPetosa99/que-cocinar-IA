@@ -3,12 +3,13 @@ import gradio as gr
 from google import genai
 from dotenv import load_dotenv
 from system_prompt import agent_role
+from vector_db import get_chroma_client
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 llm_model = os.getenv("LLM_MODEL")
 llm_client = genai.Client(api_key=api_key)
-
+chroma_client = get_chroma_client()
 
 def responder(user_message, chat):
 
