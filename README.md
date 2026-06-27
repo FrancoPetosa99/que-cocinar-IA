@@ -1,18 +1,86 @@
 # Qué Cocinar IA
 
-Asistente de cocina con RAG: recetas indexadas en ChromaDB, agente LangGraph con herramientas, y chat con streaming en Gradio.
+Asistente de cocina con RAG en modo estricto: búsqueda vectorial en ChromaDB, datos completos en SQLite, traducción ES↔EN con LCEL, y chat con streaming en Gradio.
 
-## Estructura
+El usuario escribe en **español**. El dataset está en **inglés**. El LLM **no inventa** la receta principal: solo traduce, escala porciones y sugiere sustituciones.
+
+---
+
+## Arquitectura dual
 
 ```
-├── data_preprocessing/preprocessing.ipynb   # carga data/recipes.csv e indexa en ChromaDB
+data/recipes.csv
+       │
+       ├─ Fase 1 (ingest) ──► data/recipes.db     SQLite — fuente de verdad (fila completa)
+       │
+       └─ Fase 2 (ingest) ──► chroma_db/          Chroma — solo búsqueda (nombre + ingredientes)
+```
+
+| Capa | Archivo | Rol | Qué guarda |
+|---|---|---|---|
+| **SQLite** | `data/recipes.db` | Fuente de verdad | `recipe_name`, `ingredients`, **`directions`**, tiempos, rating, nutrition, url… |
+| **ChromaDB** | `chroma_db/` | Búsqueda semántica | `page_content` = nombre + ingredientes; `metadata` = `csv_row_id`, tiempos, macros… |
+
+**Principio:** Chroma devuelve solo **IDs** (`csv_row_id`). Con ese ID, SQLite entrega la receta completa.
+
+---
+
+## Estructura del proyecto
+
+```
+que-cocinar-IA/
+├── data/
+│   ├── recipes.csv                 # fuente original
+│   └── recipes.db                  # SQLite (generado por ingest, gitignored)
+├── chroma_db/                      # índice vectorial (generado por ingest, gitignored)
+├── data_preprocessing/
+│   ├── ingest.py                   # CSV → SQLite + Chroma (recomendado)
+│   └── preprocessing.ipynb         # alternativa interactiva
 ├── backend/
-│   ├── config.py                            # LLM / embeddings (Gemini o Hugging Face)
-│   ├── database.py                          # ChromaDB + búsqueda con filtros
-│   └── agents.py                            # herramientas + agente ReAct
-├── frontend/app.py                          # UI estilo cocina con streaming
-└── chroma_db/                               # generado por el notebook (gitignored)
+│   ├── config.py                   # .env, LLM/embeddings (Gemini o Hugging Face)
+│   ├── recipe_db.py                # SQLite: Recipe, get_recipe_by_id()
+│   ├── vector_store.py             # Chroma: search_recipe_ids()
+│   ├── database.py                 # fachada (IDs + SQL)
+│   ├── pipeline.py                 # orquestador principal (modo estricto)
+│   ├── translation.py              # LCEL ES ↔ EN
+│   ├── grounding.py                # auditoría de fuente
+│   ├── agents.py                   # herramientas scaling / substitution (LLM)
+│   └── recipe_parsing.py           # parsers compartidos (tiempos, nutrition)
+├── frontend/
+│   └── app.py                      # UI Gradio con streaming
+├── requirements.txt
+└── .env
 ```
+
+---
+
+## Flujo de una consulta
+
+```
+Usuario (ES)
+    → frontend/app.py
+    → pipeline.stream_query()
+        1. LCEL: traducir consulta a inglés
+        2. ¿Es cocina? → si no, mensaje fijo
+        3. Chroma: search_recipe_ids() → [329, 305, ...]
+        4. Si no hay IDs → "No encontré recetas..."
+        5. SQLite: get_recipe_by_id(329) → fila completa (con directions)
+        6. format_recipe_from_sql() → plantilla en inglés (sin LLM)
+        7. LCEL: traducir respuesta a español
+        8. Auditoría: verificar csv_row_id
+    → Usuario (ES)
+```
+
+**Casos especiales:**
+
+| Tipo de consulta | Comportamiento |
+|---|---|
+| Buscar receta | Chroma → ID → SQLite → plantilla |
+| Escalado ("10 porciones") | `scaling_expert` sobre la última receta de la sesión |
+| Sustitución ("no tengo huevo") | `substitution_expert` (no inventa receta nueva) |
+| No es cocina | Mensaje fijo, sin LLM |
+
+---
 
 ## Setup
 
@@ -24,263 +92,195 @@ pip install -r requirements.txt
 
 ### Variables de entorno (`.env`)
 
-**Gemini (default):**
-```
+```env
+# LLM (default: Gemini)
 LLM_PROVIDER=gemini
 LLM_MODEL=gemini-2.5-flash
 GEMINI_API_KEY=tu_clave
+TEMPERATURE=0.3
+
+# Embeddings (local, sin API)
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+
+# Bases de datos
+CHROMA_DIR=chroma_db
+SQLITE_PATH=data/recipes.db
+COLLECTION_NAME=recipes
+
+# Umbral de relevancia vectorial (distancia L2; más bajo = más estricto)
+RETRIEVAL_MAX_DISTANCE=1.35
 ```
 
-**Hugging Face (hosted):**
-```
+**Cambiar a Hugging Face como LLM:**
+
+```env
 LLM_PROVIDER=huggingface
-HF_BACKEND=inference_api
+HF_BACKEND=inference_api          # o "local"
 LLM_MODEL=mistralai/Mistral-7B-Instruct-v0.3
 HUGGINGFACEHUB_API_TOKEN=tu_token
 ```
 
-**Hugging Face (local):**
+---
+
+## Indexar recetas
+
+Requisito: `data/recipes.csv` en el proyecto.
+
+```bash
+python data_preprocessing/ingest.py
 ```
-LLM_PROVIDER=huggingface
-HF_BACKEND=local
-LLM_MODEL=mistralai/Mistral-7B-Instruct-v0.3
+
+| Fase | Qué hace |
+|---|---|
+| 1 | `recipes.csv` → `data/recipes.db` (SQLite, 1.090 filas completas) |
+| 2 | SQLite → `chroma_db/` (solo nombre + ingredientes embeddeados) |
+
+Opciones:
+
+```bash
+python data_preprocessing/ingest.py --relational-only   # solo SQLite
+python data_preprocessing/ingest.py --vector-only       # solo Chroma (requiere SQLite previo)
 ```
 
-### Indexar recetas
+---
 
-1. Asegurate de tener el archivo `data/recipes.csv`.
-2. **Recomendado** — desde la raíz del proyecto:
-   ```bash
-   python data_preprocessing/ingest.py
-   ```
-   Este script borra `chroma_db/` y re-indexa con `csv_row_id` en cada documento.
-3. Alternativa: ejecutá `data_preprocessing/preprocessing.ipynb` de principio a fin (la celda de ingest también borra el índice viejo).
-4. Verificá que se creó la carpeta `chroma_db/`.
-5. **Reiniciá** `python frontend/app.py` después de re-indexar.
-
-## Cómo ejecutar
-
-Este proyecto **no tiene un servidor backend separado**. Los módulos en `backend/` (ChromaDB, agente LangGraph, herramientas) se cargan automáticamente cuando iniciás la app de Gradio.
-
-### Requisitos previos
-
-Antes de arrancar, verificá que tengas:
-
-- Entorno virtual activado y dependencias instaladas (`pip install -r requirements.txt`)
-- Archivo `.env` con al menos `GEMINI_API_KEY` y `LLM_MODEL`
-- Carpeta `chroma_db/` generada por el notebook de preprocessing
-
-### Iniciar la aplicación (backend + frontend)
-
-Desde la raíz del proyecto:
+## Ejecutar la app
 
 ```bash
 source .venv/bin/activate
 python frontend/app.py
 ```
 
-Gradio abrirá el chat en el navegador (por defecto `http://127.0.0.1:7860`). Al enviar un mensaje, el flujo es:
+Al arrancar deberías ver:
 
-1. **Frontend** (`frontend/app.py`) recibe la consulta y hace streaming de la respuesta.
-2. **Backend** (`backend/agents.py`) enruta la consulta al agente ReAct y sus herramientas.
-3. **Base de datos** (`backend/database.py`) busca recetas en ChromaDB cuando hace falta.
-
-### Probar el backend sin la interfaz (opcional)
-
-Útil para verificar que ChromaDB y el agente funcionan antes de abrir Gradio.
-
-**Probar la base vectorial:**
-
-```bash
-source .venv/bin/activate
-python -c "
-from backend.database import search_recipes
-print(search_recipes('pollo y arroz', max_total_time=30))
-"
+```
+✓ SQLite lista (.../data/recipes.db)
+✓ Chroma lista (.../chroma_db)
 ```
 
-**Probar que el agente se construye correctamente:**
+Gradio abre en `http://127.0.0.1:7860`.
 
-```bash
-source .venv/bin/activate
-python -c "
-from backend.agents import build_agent, TOOLS
-agent = build_agent()
-print('Agente OK. Herramientas:', [t.name for t in TOOLS])
-"
-```
+> No hay servidor backend separado. `backend/` se carga dentro del proceso de Gradio.
 
-**Probar una consulta completa por consola** (sin streaming):
+---
 
-```bash
-source .venv/bin/activate
-python -c "
-from backend.agents import build_agent, get_agent_config
-from langchain_core.messages import HumanMessage
+## Modo estricto (anti-alucinación)
 
-agent = build_agent()
-config = get_agent_config('test-session')
-result = agent.invoke(
-    {'messages': [HumanMessage(content='Tengo pollo, ¿qué puedo cocinar?')]},
-    config=config,
-)
-print(result['messages'][-1].content)
-"
-```
+Para la **receta principal**:
 
-### Opciones de lanzamiento
+1. Chroma encuentra el mejor `csv_row_id` (con filtros opcionales de tiempo/macros).
+2. SQLite devuelve la fila real.
+3. La respuesta se arma con **plantilla fija** (`format_recipe_from_sql`) — el LLM no redacta ingredientes ni pasos.
+4. Si no hay match relevante → mensaje fijo, sin inventar receta.
 
-```bash
-# Puerto y host personalizados
-python frontend/app.py  # editá launch() en frontend/app.py si necesitás server_name/share
+El LLM solo interviene en:
 
-# O desde Python:
-python -c "from frontend.app import create_app, KITCHEN_CSS; demo, theme = create_app(); demo.queue().launch(server_name='0.0.0.0', server_port=7860, theme=theme, css=KITCHEN_CSS)"
-```
+- Traducción ES ↔ EN (`translation.py`)
+- Escalado de porciones (`scaling_expert`)
+- Sustituciones de ingredientes (`substitution_expert`)
 
-### Solución de problemas
-
-| Error | Qué hacer |
-|---|---|
-| `No se encontró la base vectorial en 'chroma_db'` | Ejecutá `data_preprocessing/preprocessing.ipynb` |
-| `GEMINI_API_KEY no está configurada` | Creá o completá el archivo `.env` en la raíz |
-| La app no responde / timeout | Revisá conexión a internet y que la API key de Gemini sea válida |
-| `ModuleNotFoundError: backend` | Ejecutá siempre desde la raíz del proyecto, no desde `frontend/` |
-
-## Modo estricto (sin alucinaciones)
-
-El flujo principal usa `backend/pipeline.py`, **no** deja que el LLM elija ni redacte recetas:
-
-1. Busca en ChromaDB con la consulta del usuario (+ filtros de tiempo/macros si aplica).
-2. Si **no hay resultados relevantes** → responde con un mensaje fijo (sin LLM).
-3. Si **hay resultados** → formatea la mejor coincidencia con una **plantilla** tomada literalmente de la base (`format_recipe_strict`). El LLM **no** genera ingredientes ni pasos.
-
-Excepciones donde sí interviene el LLM:
-- **Escalado de porciones** (sobre la última receta mostrada en la sesión).
-- **Sustituciones** de ingredientes (no propone una receta nueva completa).
-
-Ajustá la sensibilidad con `RETRIEVAL_MAX_DISTANCE` en `.env` (ver sección abajo).
-
-## Verificar que la receta viene de la base de datos
-
-No se puede **garantizar al 100%** solo con el prompt. En **modo estricto** la receta principal se arma por plantilla desde ChromaDB; la auditoría confirma el `csv_row_id`.
-
-### Cómo funciona
-
-1. **`csv_row_id` en metadata** — cada receta indexada en ChromaDB lleva el id de la fila en `data/recipes.csv`.
-2. **`recipe_retriever` obligatorio** — el system prompt exige consultar la base antes de proponer una receta.
-3. **Cita obligatoria** — al final de cada respuesta el modelo debe incluir:
-   ```
-   Fuente verificada: csv_row_id=123 | nombre=Nombre de la receta
-   ```
-4. **Auditoría automática** — al terminar el streaming, el frontend compara:
-   - qué recetas devolvió `recipe_retriever` (desde el estado del agente)
-   - qué `csv_row_id` citó el modelo
-   - y muestra **✅ VERIFICADO** o **⚠️ NO VERIFICADO**
-
-### Re-indexar (importante)
-
-Si indexaste antes de este cambio, **volvé a ejecutar** `data_preprocessing/preprocessing.ipynb` para que `chroma_db/` incluya `csv_row_id`.
-
-### Probar manualmente en consola
-
-```bash
-source .venv/bin/activate
-python -c "
-from backend.database import search_recipes, get_csv_row_preview
-out = search_recipes('pollo y arroz', k=2)
-print(out)
-print('---')
-# Reemplazá 123 por un csv_row_id que aparezca arriba
-print(get_csv_row_preview(0))
-"
-```
-
-### Probar auditoría de una consulta completa
-
-```bash
-source .venv/bin/activate
-python -c "
-from backend.agents import build_agent, get_agent_config
-from backend.grounding import extract_retrieved_sources, validate_grounding, format_grounding_footer
-from langchain_core.messages import HumanMessage
-
-agent = build_agent()
-config = get_agent_config('audit-test')
-result = agent.invoke(
-    {'messages': [HumanMessage(content='Tengo pollo, ¿qué puedo cocinar?')]},
-    config=config,
-)
-answer = result['messages'][-1].content
-state = agent.get_state(config)
-validation = validate_grounding(answer, extract_retrieved_sources(state))
-print(answer)
-print('---')
-print(format_grounding_footer(validation))
-"
-```
-
-### Qué mirar al testear
-
-| Señal | Significado |
-|---|---|
-| ✅ VERIFICADO | El `csv_row_id` citado estuvo entre los resultados de ChromaDB |
-| ⚠️ NO VERIFICADO + sin retriever | El agente no llamó a la base (posible alucinación) |
-| ⚠️ NO VERIFICADO + id no coincide | El modelo citó un id que no recuperó |
-
-Contrastá siempre con `data/recipes.csv`: la fila cuya primera columna (`Unnamed: 0`) coincide con `csv_row_id` debe ser la misma receta.
+---
 
 ## Traducción ES ↔ EN (LCEL)
 
-El dataset está en **inglés**; el usuario escribe en **español**. El flujo usa LCEL en `backend/translation.py`:
+El dataset y los embeddings están en inglés. `backend/translation.py` usa:
 
 ```
-Consulta (ES) → [LCEL: traducir a EN] → búsqueda ChromaDB + herramientas (EN) → [LCEL: traducir a ES] → respuesta al usuario
+TRANSLATE_TO_ENGLISH_PROMPT | llm | StrOutputParser()   # pre-búsqueda
+TRANSLATE_TO_SPANISH_PROMPT | llm | StrOutputParser()   # post-respuesta
 ```
 
-- **Pre-procesamiento:** `TRANSLATE_TO_ENGLISH_PROMPT | llm | StrOutputParser()`
-- **Post-procesamiento:** `TRANSLATE_TO_SPANISH_PROMPT | llm | StrOutputParser()`
-- **Prompts internos** (`agents.py`, herramientas scaling/substitution): todos en **inglés**
-- **Auditoría de fuente:** se genera en español después de validar la respuesta en inglés
-- Las líneas `csv_row_id=` no se traducen (se preservan en el post-proceso)
+Las líneas con `csv_row_id=` se preservan sin traducir.
 
-### Umbral de relevancia (`RETRIEVAL_MAX_DISTANCE`)
+---
 
-**No es cosine similarity (−1 a 1).** Chroma devuelve una **distancia**: cuanto **más bajo**, más similar.
+## Auditoría de fuente
 
-| Métrica en tu colección | Por defecto en Chroma (sin config explícita) |
-|---|---|
-| **L2** (distancia euclidiana entre embeddings) | Es la que usa tu `chroma_db` actual |
+Cada respuesta incluye:
 
-Ejemplos reales en este proyecto:
+```
+Verified source: csv_row_id=329 | name=Chicken with Lemon-Caper Sauce
+```
 
-| Consulta | Distancia top-1 | ¿Útil? |
+Y un bloque **Auditoría de fuente** con ✅ VERIFICADO o ⚠️ NO VERIFICADO.
+
+Contrastá con `data/recipes.csv`: la columna `Unnamed: 0` debe coincidir con `csv_row_id`.
+
+---
+
+## Umbral de relevancia (`RETRIEVAL_MAX_DISTANCE`)
+
+Chroma devuelve **distancia L2** (no cosine similarity). **Más bajo = más similar.**
+
+| Consulta | Distancia típica | Resultado con umbral 1.35 |
 |---|---|---|
-| `chicken rice` | ~0.93 | Sí |
-| `pollo y arroz` | ~1.37 | Débil (match irrelevante) |
-| `xyznonexistent999` | ~1.72 | No |
+| `chicken rice` | ~0.93 | ✅ Aceptada |
+| `pollo y arroz` | ~1.37 | ❌ Rechazada (match débil) |
+| consulta sin sentido | ~1.7+ | ❌ Rechazada |
 
-Default `RETRIEVAL_MAX_DISTANCE=1.35`: acepta buenos matches (~0.9) y rechaza consultas sin receta relevante (~1.4+).
+- **Más estricto** → bajar (ej. `1.1`)
+- **Más permisivo** → subir (ej. `1.5`)
 
-- **Más estricto** → bajar (ej. `1.1`) → más respuestas "no hay recetas".
-- **Más permisivo** → subir (ej. `1.5`) → más resultados, aunque a veces irrelevantes.
+---
 
-Si quisieras pensar en cosine similarity (vectores normalizados, métrica L2):
+## Probar sin Gradio
 
-\[
-\text{cos\_sim} \approx 1 - \frac{\text{L2}^2}{2}
-\]
+**Búsqueda vectorial → ID:**
 
-Ej.: L2 = 0.93 → cos_sim ≈ 0.57 | L2 = 1.35 → cos_sim ≈ 0.09 | L2 = 1.05 → cos_sim ≈ 0.45
+```bash
+python -c "
+from backend.vector_store import search_recipe_ids
+print(search_recipe_ids('chicken rice', k=3))
+"
+```
 
-El valor `1.05` anterior era un default arbitrario y el comentario de "cosine" era **incorrecto**. Usá `RETRIEVAL_MAX_DISTANCE` en `.env`.
+**ID → receta completa desde SQLite:**
 
-## Herramientas del agente
+```bash
+python -c "
+from backend.recipe_db import get_recipe_by_id
+from backend.pipeline import format_recipe_from_sql
+r = get_recipe_by_id(329)
+print(format_recipe_from_sql(r)[:600])
+"
+```
 
-| Herramienta | Uso |
+**Flujo integrado (búsqueda + SQL):**
+
+```bash
+python -c "
+from backend.vector_store import search_recipe_ids
+from backend.recipe_db import get_recipe_by_id
+ids = search_recipe_ids('chicken', k=1)
+r = get_recipe_by_id(ids[0])
+print(f'ID={r.id} | {r.recipe_name} | directions={len(r.directions)} chars')
+"
+```
+
+---
+
+## Solución de problemas
+
+| Error | Qué hacer |
 |---|---|
-| `recipe_retriever` | Busca recetas por ingredientes, tema, tiempo o macros |
-| `scaling_expert` | Escala porciones (ej. 5 → 10) |
-| `substitution_expert` | Sugiere reemplazos de ingredientes |
+| `No se encontró la base vectorial en 'chroma_db'` | `python data_preprocessing/ingest.py` |
+| `No se encontró la base relacional` | `python data_preprocessing/ingest.py --relational-only` |
+| `csv_row_id` missing / integridad | Re-ejecutar `ingest.py` completo y **reiniciar** la app |
+| `GEMINI_API_KEY no está configurada` | Completar `.env` |
+| Siempre "No encontré recetas" | Subir `RETRIEVAL_MAX_DISTANCE` en `.env` |
+| Primera consulta lenta (~10s) | Normal: carga embeddings; el warmup al inicio lo mitiga |
+| `ModuleNotFoundError: backend` | Ejecutar desde la raíz del proyecto |
 
-El agente ReAct enruta automáticamente según la intención del usuario.
+---
+
+## Herramientas LLM (`agents.py`)
+
+Usadas por el pipeline en casos específicos (no para elegir la receta principal):
+
+| Herramienta | Cuándo se usa |
+|---|---|
+| `scaling_expert` | "Adaptar para 10 porciones" |
+| `substitution_expert` | "No tengo huevo / alternativa vegana" |
+| `recipe_retriever` | Disponible para uso con agente ReAct; el flujo principal usa `pipeline.py` |
+
+Prompts internos en **inglés**. Respuesta al usuario en **español** (vía traducción).

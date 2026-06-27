@@ -1,190 +1,32 @@
-"""ChromaDB initialization, retriever setup, and metadata-filtered search."""
+"""Facade: vector search (IDs) + relational fetch (full rows)."""
 
 from __future__ import annotations
 
-import os
-from typing import Any
-
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
-from langchain_core.vectorstores import VectorStoreRetriever
-
-from backend.config import (
-    CHROMA_DIR,
-    COLLECTION_NAME,
-    get_embeddings,
-    validate_chroma_exists,
+from backend.recipe_db import Recipe, get_recipe_by_id, get_recipes_by_ids
+from backend.vector_store import (
+    RETRIEVAL_MAX_DISTANCE,
+    best_match_distance,
+    get_vectorstore,
+    recipe_to_vector_document,
+    reset_vectorstore,
+    search_recipe_ids,
+    search_recipe_ids_with_scores,
 )
 
-_vectorstore: Chroma | None = None
-
-# Chroma returns a DISTANCE per hit (not cosine similarity). Lower = more similar.
-# Default collection metric is L2. Typical ranges on this dataset:
-#   ~0.7–1.0  good match | ~1.2–1.5  weak | >1.6  poor / irrelevant
-# Env: RETRIEVAL_MAX_DISTANCE (alias: RETRIEVAL_SCORE_THRESHOLD for backward compat)
-RETRIEVAL_MAX_DISTANCE = float(
-    os.getenv(
-        "RETRIEVAL_MAX_DISTANCE",
-        os.getenv("RETRIEVAL_SCORE_THRESHOLD", "1.35"),
-    )
-)
-
-
-def reset_vectorstore() -> None:
-    """Clear cached Chroma handle (call after re-indexing chroma_db)."""
-    global _vectorstore
-    _vectorstore = None
-
-
-def _validate_collection_has_row_ids(store: Chroma) -> None:
-    """Ensure indexed recipes include csv_row_id (required for grounding)."""
-    try:
-        count = store._collection.count()  # noqa: SLF001
-        if count == 0:
-            raise ValueError("La colección ChromaDB está vacía.")
-        peek = store._collection.peek(1)  # noqa: SLF001
-        metas = peek.get("metadatas") or []
-        if not metas or "csv_row_id" not in (metas[0] or {}):
-            raise ValueError(
-                "El índice no tiene csv_row_id en metadata. "
-                "Ejecutá: python data_preprocessing/ingest.py "
-                "y reiniciá la app."
-            )
-    except ValueError:
-        raise
-    except Exception as exc:
-        raise ValueError(
-            "No se pudo validar chroma_db. "
-            "Ejecutá: python data_preprocessing/ingest.py"
-        ) from exc
-
-
-def get_vectorstore() -> Chroma:
-    """Open (or create a cached handle to) the persisted Chroma collection."""
-    global _vectorstore
-    if _vectorstore is not None:
-        return _vectorstore
-
-    validate_chroma_exists()
-
-    try:
-        _vectorstore = Chroma(
-            collection_name=COLLECTION_NAME,
-            embedding_function=get_embeddings(),
-            persist_directory=CHROMA_DIR,
-        )
-        _validate_collection_has_row_ids(_vectorstore)
-    except Exception as exc:
-        _vectorstore = None
-        if isinstance(exc, ValueError):
-            raise
-        raise ConnectionError(
-            f"No se pudo conectar a ChromaDB en '{CHROMA_DIR}': {exc}"
-        ) from exc
-
-    return _vectorstore
-
-
-def _build_where_filter(
-    *,
-    max_total_time: int | None = None,
-    min_protein: float | None = None,
-    max_calories: float | None = None,
-) -> dict[str, Any] | None:
-    """Build a Chroma-compatible metadata filter from optional constraints."""
-    conditions: list[dict[str, Any]] = []
-
-    if max_total_time is not None:
-        conditions.append({"total_time_min": {"$lte": int(max_total_time)}})
-    if min_protein is not None:
-        conditions.append({"protein_g": {"$gte": float(min_protein)}})
-    if max_calories is not None:
-        conditions.append({"calories": {"$lte": float(max_calories)}})
-
-    if not conditions:
-        return None
-    if len(conditions) == 1:
-        return conditions[0]
-    return {"$and": conditions}
-
-
-def get_retriever(
-    *,
-    filters: dict[str, Any] | None = None,
-    k: int = 4,
-) -> VectorStoreRetriever:
-    """Return a retriever, optionally with a Chroma metadata filter."""
-    search_kwargs: dict[str, Any] = {"k": k}
-    if filters:
-        search_kwargs["filter"] = filters
-
-    return get_vectorstore().as_retriever(search_kwargs=search_kwargs)
-
-
-def search_recipe_documents(
-    query: str,
-    *,
-    max_total_time: int | None = None,
-    min_protein: float | None = None,
-    max_calories: float | None = None,
-    k: int = 4,
-    score_threshold: float | None = None,
-) -> list[Document]:
-    """
-    Strict search: returns only documents from ChromaDB that pass relevance threshold.
-
-    No fallback to unfiltered search when metadata filters return nothing.
-    """
-    threshold = score_threshold if score_threshold is not None else RETRIEVAL_MAX_DISTANCE
-    where = _build_where_filter(
-        max_total_time=max_total_time,
-        min_protein=min_protein,
-        max_calories=max_calories,
-    )
-
-    vectorstore = get_vectorstore()
-    kwargs: dict[str, Any] = {"k": k}
-    if where:
-        kwargs["filter"] = where
-
-    results = vectorstore.similarity_search_with_score(query, **kwargs)
-
-    if not results:
-        return []
-
-    docs = [doc for doc, score in results if score <= threshold]
-    return docs
-
-
-def _format_recipe(doc: Document) -> str:
-    """Format a single recipe document for the LLM context."""
-    meta = doc.metadata
-    row_id = meta.get("csv_row_id", "?")
-    lines = [
-        f"[csv_row_id={row_id}] **{meta.get('recipe_name', 'Receta sin nombre')}**",
-        f"Tiempo total: {meta.get('total_time_min', '?')} min | "
-        f"Porciones: {meta.get('servings', '?')} | "
-        f"Rating: {meta.get('rating', 'N/A')}",
-    ]
-
-    nutrition_parts = []
-    for key, label in [
-        ("calories", "cal"),
-        ("protein_g", "proteína"),
-        ("carbs_g", "carbos"),
-        ("fat_g", "grasa"),
-    ]:
-        if key in meta and meta[key] is not None:
-            nutrition_parts.append(f"{label}: {meta[key]}")
-    if nutrition_parts:
-        lines.append("Nutrición: " + ", ".join(nutrition_parts))
-
-    if meta.get("cuisine_path"):
-        lines.append(f"Cocina: {meta['cuisine_path']}")
-
-    lines.append("")
-    lines.append(doc.page_content)
-    return "\n".join(lines)
+__all__ = [
+    "RETRIEVAL_MAX_DISTANCE",
+    "Recipe",
+    "best_match_distance",
+    "get_csv_row_preview",
+    "get_recipe_by_id",
+    "get_recipes_by_ids",
+    "get_vectorstore",
+    "recipe_to_vector_document",
+    "reset_vectorstore",
+    "search_recipe_ids",
+    "search_recipe_ids_with_scores",
+    "search_recipes",
+]
 
 
 def search_recipes(
@@ -195,46 +37,37 @@ def search_recipes(
     max_calories: float | None = None,
     k: int = 4,
 ) -> str:
-    """
-    Search recipes by semantic query with optional metadata filters.
-
-    Returns a formatted string of top-k matches for LLM consumption.
-    """
-    docs = search_recipe_documents(
+    """Agent tool: vector search by ID, then load full rows from SQLite."""
+    ids = search_recipe_ids(
         query,
         max_total_time=max_total_time,
         min_protein=min_protein,
         max_calories=max_calories,
         k=k,
     )
+    if not ids:
+        return "No matching recipes found in the database."
 
-    if not docs:
-        return "No se encontraron recetas que coincidan con la búsqueda."
-
-    formatted = [_format_recipe(doc) for doc in docs]
-    return "\n\n---\n\n".join(formatted)
+    recipes = get_recipes_by_ids(ids)
+    blocks = []
+    for recipe in recipes:
+        blocks.append(
+            f"[csv_row_id={recipe.id}] **{recipe.recipe_name}**\n"
+            f"Time: {recipe.total_time_min or '?'} min | "
+            f"Servings: {recipe.servings or '?'} | Rating: {recipe.rating or 'N/A'}\n\n"
+            f"{recipe.embedding_text()}"
+        )
+    return "\n\n---\n\n".join(blocks)
 
 
 def get_csv_row_preview(csv_row_id: int) -> str:
-    """Return key fields from data/recipes.csv for audit/testing."""
-    import pandas as pd
-
-    from backend.config import PROJECT_ROOT
-
-    csv_path = PROJECT_ROOT / "data" / "recipes.csv"
-    if not csv_path.exists():
-        return f"CSV no encontrado: {csv_path}"
-
-    df = pd.read_csv(csv_path)
-    id_col = "Unnamed: 0" if "Unnamed: 0" in df.columns else df.columns[0]
-    match = df[df[id_col] == csv_row_id]
-    if match.empty:
-        return f"No existe fila con csv_row_id={csv_row_id}"
-
-    row = match.iloc[0]
+    """Return key fields for audit/testing."""
+    recipe = get_recipe_by_id(csv_row_id)
+    if recipe is None:
+        return f"No row with csv_row_id={csv_row_id}"
     return (
-        f"csv_row_id={csv_row_id}\n"
-        f"recipe_name={row.get('recipe_name')}\n"
-        f"ingredients={str(row.get('ingredients', ''))[:200]}...\n"
-        f"directions={str(row.get('directions', ''))[:200]}..."
+        f"csv_row_id={recipe.id}\n"
+        f"recipe_name={recipe.recipe_name}\n"
+        f"ingredients={recipe.ingredients[:200]}...\n"
+        f"directions={recipe.directions[:200]}..."
     )

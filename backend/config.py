@@ -20,6 +20,15 @@ else:
     CHROMA_DIR = str(PROJECT_ROOT / "chroma_db")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "recipes")
 
+_sqlite_env = os.getenv("SQLITE_PATH")
+if _sqlite_env:
+    _sqlite_path = Path(_sqlite_env)
+    SQLITE_PATH = str(
+        _sqlite_path if _sqlite_path.is_absolute() else PROJECT_ROOT / _sqlite_path
+    )
+else:
+    SQLITE_PATH = str(PROJECT_ROOT / "data" / "recipes.db")
+
 # LLM settings
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")

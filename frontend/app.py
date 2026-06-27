@@ -17,16 +17,19 @@ from backend.pipeline import stream_query  # noqa: E402
 
 
 def _warmup_backend() -> None:
-    """Load embeddings + Chroma once at startup (avoids ~10s hang on first message)."""
+    """Load SQLite + Chroma once at startup."""
     try:
-        from backend.config import CHROMA_DIR
+        from backend.config import CHROMA_DIR, SQLITE_PATH
         from backend.database import get_vectorstore, reset_vectorstore
+        from backend.recipe_db import get_connection
 
-        reset_vectorstore()  # always read fresh index from disk on startup
+        reset_vectorstore()
+        get_connection()
         get_vectorstore()
-        print(f"✓ Base vectorial lista ({CHROMA_DIR})")
+        print(f"✓ SQLite lista ({SQLITE_PATH})")
+        print(f"✓ Chroma lista ({CHROMA_DIR})")
     except Exception as exc:
-        print(f"⚠️ No se pudo precargar chroma_db: {exc}")
+        print(f"⚠️ No se pudo precargar las bases: {exc}")
 
 KITCHEN_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Pacifico&family=Nunito:wght@400;600;700&display=swap');
