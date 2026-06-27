@@ -1,3 +1,16 @@
 gradio==6.19.0
-google-genai==2.10.0
 python-dotenv==1.2.2
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-google-genai>=2.0.0
+langchain-huggingface>=0.1.0
+langchain-chroma>=0.2.0
+langgraph>=0.2.0
+sentence-transformers>=3.0.0
+chromadb>=0.5.0
+pandas>=2.0.0
+huggingface-hub>=0.26.0
+transformers>=4.46.0
+accelerate>=1.0.0
+jupyter>=1.0.0
+ipykernel>=6.0.0
