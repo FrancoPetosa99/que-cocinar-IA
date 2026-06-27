@@ -48,6 +48,9 @@ que-cocinar-IA/
 │   └── recipe_parsing.py           # parsers compartidos (tiempos, nutrition)
 ├── frontend/
 │   └── app.py                      # UI Gradio con streaming
+├── scripts/
+│   └── download_hf_model.py        # descarga modelo HF a models/
+├── models/                         # modelos locales (gitignored)
 ├── requirements.txt
 └── .env
 ```
@@ -92,30 +95,68 @@ pip install -r requirements.txt
 
 ### Variables de entorno (`.env`)
 
-```env
-# LLM (default: Gemini)
-LLM_PROVIDER=gemini
-LLM_MODEL=gemini-2.5-flash
-GEMINI_API_KEY=tu_clave
-TEMPERATURE=0.3
-
-# Embeddings (local, sin API)
-EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-
-# Bases de datos
-CHROMA_DIR=chroma_db
-SQLITE_PATH=data/recipes.db
-COLLECTION_NAME=recipes
-
-# Umbral de relevancia vectorial (distancia L2; más bajo = más estricto)
-RETRIEVAL_MAX_DISTANCE=1.35
-```
-
-**Cambiar a Hugging Face como LLM:**
+Copiá `.env.example` a `.env` o usá esta configuración para **Hugging Face local**:
 
 ```env
 LLM_PROVIDER=huggingface
-HF_BACKEND=inference_api          # o "local"
+HF_BACKEND=local
+LLM_MODEL=Qwen/Qwen2.5-1.5B-Instruct
+HF_MODEL_CACHE_DIR=models
+HF_DEVICE=auto              # auto | cpu | mps | cuda
+HF_MAX_NEW_TOKENS=512
+TEMPERATURE=0.3
+
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+CHROMA_DIR=chroma_db
+SQLITE_PATH=data/recipes.db
+RETRIEVAL_MAX_DISTANCE=1.35
+```
+
+### Modelo Hugging Face local (recomendado)
+
+**1. Instalar dependencias** (incluye PyTorch):
+
+```bash
+pip install -r requirements.txt
+```
+
+**2. Descargar el modelo** (~3 GB para Qwen2.5-1.5B):
+
+```bash
+python scripts/download_hf_model.py
+# o con otro modelo:
+python scripts/download_hf_model.py microsoft/Phi-3-mini-4k-instruct
+```
+
+El modelo se guarda en `models/<nombre>/`. La app lo detecta automáticamente.
+
+**3. Iniciar la app** (carga el modelo al arrancar):
+
+```bash
+python frontend/app.py
+```
+
+Modelos sugeridos según tu hardware:
+
+| Modelo | Tamaño aprox. | Notas |
+|---|---|---|
+| `Qwen/Qwen2.5-1.5B-Instruct` | ~3 GB | Default, bueno para traducción |
+| `HuggingFaceTB/SmolLM2-1.7B-Instruct` | ~3 GB | Muy liviano |
+| `microsoft/Phi-3-mini-4k-instruct` | ~7 GB | Mejor calidad, más RAM |
+
+**Alternativa: Gemini (cloud)**
+
+```env
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-2.5-flash
+GEMINI_API_KEY=tu_clave
+```
+
+**Alternativa: Hugging Face Inference API (cloud, sin descargar)**
+
+```env
+LLM_PROVIDER=huggingface
+HF_BACKEND=inference_api
 LLM_MODEL=mistralai/Mistral-7B-Instruct-v0.3
 HUGGINGFACEHUB_API_TOKEN=tu_token
 ```

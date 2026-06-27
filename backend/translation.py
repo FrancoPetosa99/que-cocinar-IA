@@ -56,6 +56,13 @@ def get_translate_to_english_chain() -> Runnable:
     return _translate_to_english
 
 
+def reset_translation_chains() -> None:
+    """Clear cached LCEL chains (e.g. after switching LLM provider)."""
+    global _translate_to_english, _translate_to_spanish
+    _translate_to_english = None
+    _translate_to_spanish = None
+
+
 def get_translate_to_spanish_chain() -> Runnable:
     """LCEL chain: English text -> Spanish text."""
     global _translate_to_spanish

@@ -17,9 +17,15 @@ from backend.pipeline import stream_query  # noqa: E402
 
 
 def _warmup_backend() -> None:
-    """Load SQLite + Chroma once at startup."""
+    """Load SQLite, Chroma, and optionally the local HF LLM at startup."""
     try:
-        from backend.config import CHROMA_DIR, SQLITE_PATH
+        from backend.config import (
+            CHROMA_DIR,
+            HF_BACKEND,
+            LLM_PROVIDER,
+            SQLITE_PATH,
+            preload_local_llm,
+        )
         from backend.database import get_vectorstore, reset_vectorstore
         from backend.recipe_db import get_connection
 
@@ -28,8 +34,13 @@ def _warmup_backend() -> None:
         get_vectorstore()
         print(f"✓ SQLite lista ({SQLITE_PATH})")
         print(f"✓ Chroma lista ({CHROMA_DIR})")
+
+        if LLM_PROVIDER == "huggingface" and HF_BACKEND == "local":
+            print("Cargando modelo Hugging Face local (puede tardar unos minutos)...")
+            preload_local_llm()
+            print("✓ Modelo local listo")
     except Exception as exc:
-        print(f"⚠️ No se pudo precargar las bases: {exc}")
+        print(f"⚠️ No se pudo precargar el backend: {exc}")
 
 KITCHEN_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Pacifico&family=Nunito:wght@400;600;700&display=swap');
