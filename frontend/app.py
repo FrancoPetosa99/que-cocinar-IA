@@ -204,6 +204,7 @@ def create_app() -> gr.Blocks:
                                                         height="auto",
                                                         object_fit="contain",
                                                         elem_classes=["cuisine-recipe-gallery"],
+                                                        allow_preview=False,
                                                     )
                                                     recipe_galleries.append((gallery, recipe_names))
                                                 else:

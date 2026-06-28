@@ -341,7 +341,62 @@ body, .gradio-container {
     color: var(--text-main) !important;
     background: var(--bg-panel) !important;
     font-size: 0.75rem !important;
+    width: 100% !important;             
+    left: 0 !important;                 
+    text-align: center !important;      
+    justify-content: center !important;
+    box-sizing: border-box !important;
 }
+
+
+
+/* ========================================================= */
+/* Hover para los encabezados de los acordeones (Categorías) */
+/* ========================================================= */
+#cuisine-sidebar .accordion > button,
+#cuisine-sidebar .label-wrap {
+    padding: 0.6rem 0.8rem !important;
+    min-height: 2.5rem !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    border-radius: 4px !important; /* Lo fijamos desde el inicio para que no mute la forma */
+    transition: all 0.3s ease-in-out !important; /* <-- Acá está la transición de 0.3 segundos */
+}
+
+/* ========================================================= */
+/* 2. Estado Hover: SOLO modificamos lo visual (colores)     */
+/* ========================================================= */
+#cuisine-sidebar .accordion > button:hover,
+#cuisine-sidebar .label-wrap:hover {
+    background: var(--accent-primary) !important;
+    cursor: pointer !important;
+}
+
+/* Transición suave también para el color de la letra */
+#cuisine-sidebar .accordion > button:hover span,
+#cuisine-sidebar .label-wrap:hover span {
+    color: #ffffff !important;
+    transition: color 0.3s ease-in-out !important;
+}
+
+/* Ajuste del borde del acordeón general */
+#cuisine-sidebar .accordion:hover {
+    border-color: var(--accent-primary) !important;
+    transition: border-color 0.3s ease-in-out !important;
+}
+
+/* Cambiar el color del texto a blanco al hacer hover */
+#cuisine-sidebar .accordion > button:hover span,
+#cuisine-sidebar .label-wrap:hover span {
+    color: #ffffff !important;
+}
+
+/* Ajuste específico para que el borde del acordeón no desentone */
+#cuisine-sidebar .accordion:hover {
+    border-color: var(--accent-primary) !important;
+}
+
+
 
 /* ============================== */
 /* Chatbot UI                     */
