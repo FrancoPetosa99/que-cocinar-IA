@@ -90,79 +90,75 @@ body, .gradio-container {
 /* ------------------------------------------------------------------ */
 #top-controls-row {
     position: absolute !important;
-    top: 0.75rem;
-    right: 0.75rem;
+    top: 0.85rem;
+    right: 0.85rem;
     z-index: 20;
     display: flex !important;
+    flex-direction: row !important;
     width: auto !important;
-    gap: 0.45rem !important;
+    max-width: max-content !important;
+    gap: 0.6rem !important;
     align-items: center !important;
+    justify-content: flex-end !important;
 }
 
+/* Forzar a las columnas contenedoras de Gradio a no aplastar los botones */
 #top-controls-row > * {
     width: auto !important;
-    flex-grow: 0 !important;
+    min-width: max-content !important;
+    flex: 0 0 auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    border: none !important;
 }
 
 /* ------------------------------------------------------------------ */
-/* Botones superiores — diseño moderno con ícono SVG + etiqueta        */
-/* Pill shape, fondo sutil, hover con relleno de acento.               */
+/* Botones superiores — diseño moderno tipo píldora horizontal       */
 /* ------------------------------------------------------------------ */
 #sidebar-toggle-btn,
 #theme-toggle-btn {
     display: inline-flex !important;
+    flex-direction: row !important;
     align-items: center !important;
     justify-content: center !important;
-    gap: 0.45rem !important;
+    gap: 0.5rem !important;
 
-    /* Geometría */
+    /* Geometría estricta anti-deformación */
     height: 2.2rem !important;
-    min-height: 2.2rem !important;
-    min-width: 0 !important;
-    padding: 0 0.85rem !important;
-    border-radius: 999px !important;
+    width: auto !important;
+    min-width: max-content !important;
+    padding: 0 1rem !important;
+    border-radius: 50px !important;
 
-    /* Colores base */
-    background-color: var(--bg-panel) !important;
-    color: var(--accent-primary) !important;
+    /* Estilos base (Claro) */
+    background-color: var(--accent-primary)
+    color: #ffffff !important;
     border: 1.5px solid var(--border-color) !important;
 
     /* Tipografía */
     font-family: 'Nunito', sans-serif !important;
-    font-size: 0.78rem !important;
+    font-size: 0.82rem !important;
     font-weight: 700 !important;
-    letter-spacing: 0.01em !important;
+    letter-spacing: 0.02em !important;
     white-space: nowrap !important;
 
-    /* Sombra y transición */
-    box-shadow: 0 1px 4px rgba(0,0,0,0.10) !important;
-    transition: background-color 0.18s ease,
-                color 0.18s ease,
-                border-color 0.18s ease,
-                box-shadow 0.18s ease,
-                transform 0.14s ease !important;
-
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08) !important;
+    transition: all 0.2s ease-in-out !important;
     cursor: pointer !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    flex-shrink: 0 !important;
-    overflow: hidden !important;
-    position: relative !important;
 }
 
-/* Oculta el texto generado por Gradio visualmente (ya que lo
-   reemplazamos con pseudo-elementos), pero lo conserva para a11y */
+/* Evitar que Gradio altere o colapse el texto interno del botón */
 #sidebar-toggle-btn span,
 #theme-toggle-btn span {
-    position: absolute !important;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
+    display: inline-block !important;
+    white-space: nowrap !important;
+    color: inherit !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
 }
 
-/* Ícono + etiqueta renderizados vía ::before (ícono SVG) y ::after (texto) */
+/* Íconos renderizados vía ::before */
 #sidebar-toggle-btn::before,
 #theme-toggle-btn::before {
     content: '';
@@ -176,57 +172,42 @@ body, .gradio-container {
     transition: background-image 0.18s ease;
 }
 
-#sidebar-toggle-btn::after,
-#theme-toggle-btn::after {
-    font-family: 'Nunito', sans-serif;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    transition: color 0.18s ease;
-}
-
-/* Ícono sidebar (light) */
+/* Ícono menú (light) */
 #sidebar-toggle-btn::before {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237b2cbf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Cline x1='9' y1='4' x2='9' y2='20'/%3E%3C/svg%3E");
 }
 
-/* Texto sidebar */
-#sidebar-toggle-btn::after {
-    content: 'Menú';
-    color: var(--accent-primary);
-}
-
-/* Ícono tema (half-circle sol/luna, light) */
+/* Ícono tema (light) */
 #theme-toggle-btn::before {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237b2cbf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 3a9 9 0 0 0 0 18z' fill='%237b2cbf' stroke='none'/%3E%3C/svg%3E");
 }
 
-/* Texto tema */
-#theme-toggle-btn::after {
-    content: 'Tema';
-    color: var(--accent-primary);
+/* ------------------------------------------------------------------ */
+/* Ajustes de Contraste Premium para el Modo Oscuro                   */
+/* ------------------------------------------------------------------ */
+.dark #sidebar-toggle-btn,
+.dark #theme-toggle-btn {
+    background-color: rgba(255, 255, 255, 0.08) !important; /* Esmerilado translúcido */
+    color: #ffffff !important; /* Texto blanco puro */
+    border: 1.5px solid rgba(255, 255, 255, 0.2) !important;
+    backdrop-filter: blur(4px) !important;
 }
 
-/* --- Tema oscuro: ícono blanco --- */
 .dark #sidebar-toggle-btn::before {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239d4edd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Cline x1='9' y1='4' x2='9' y2='20'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Cline x1='9' y1='4' x2='9' y2='20'/%3E%3C/svg%3E");
 }
 
 .dark #theme-toggle-btn::before {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239d4edd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 3a9 9 0 0 0 0 18z' fill='%239d4edd' stroke='none'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 3a9 9 0 0 0 0 18z' fill='%23ffffff' stroke='none'/%3E%3C/svg%3E");
 }
 
-.dark #sidebar-toggle-btn::after,
-.dark #theme-toggle-btn::after {
-    color: var(--accent-primary);
-}
-
-/* --- Hover: fondo de acento, ícono y texto blancos --- */
+/* --- Estados Hover --- */
 #sidebar-toggle-btn:hover,
 #theme-toggle-btn:hover {
     background-color: var(--accent-primary) !important;
     border-color: var(--accent-primary) !important;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.18) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.18) !important;
     transform: translateY(-1px);
 }
 
@@ -238,12 +219,7 @@ body, .gradio-container {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 3a9 9 0 0 0 0 18z' fill='%23ffffff' stroke='none'/%3E%3C/svg%3E") !important;
 }
 
-#sidebar-toggle-btn:hover::after,
-#theme-toggle-btn:hover::after {
-    color: #ffffff !important;
-}
-
-/* --- Active: sin elevación --- */
+/* --- Estados Active --- */
 #sidebar-toggle-btn:active,
 #theme-toggle-btn:active {
     transform: translateY(0);
