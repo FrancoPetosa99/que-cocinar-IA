@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS recipes (
 );
 """
 
-
 @dataclass
 class Recipe:
     """Full recipe row from SQLite."""
@@ -79,7 +78,6 @@ class Recipe:
             f"Directions:\n{self.directions}"
         )
 
-
 def _row_to_recipe(row: sqlite3.Row) -> Recipe:
     return Recipe(
         id=int(row["id"]),
@@ -106,7 +104,6 @@ def _row_to_recipe(row: sqlite3.Row) -> Recipe:
         fat_g=row["fat_g"],
     )
 
-
 def get_connection() -> sqlite3.Connection:
     db_path = Path(SQLITE_PATH)
     if not db_path.exists():
@@ -118,14 +115,12 @@ def get_connection() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
-
 def get_recipe_by_id(recipe_id: int) -> Recipe | None:
     with get_connection() as conn:
         row = conn.execute(
             "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
         ).fetchone()
     return _row_to_recipe(row) if row else None
-
 
 def get_recipes_by_ids(recipe_ids: list[int]) -> list[Recipe]:
     """Fetch recipes preserving the order of recipe_ids."""
@@ -140,84 +135,48 @@ def get_recipes_by_ids(recipe_ids: list[int]) -> list[Recipe]:
     by_id = {_row_to_recipe(r).id: _row_to_recipe(r) for r in rows}
     return [by_id[i] for i in recipe_ids if i in by_id]
 
+def insert_recipe(conn: sqlite3.Connection, row: pd.Series) -> None:
+    """Inserta una receta en la base de datos."""
 
-def load_csv_to_sqlite(csv_path: Path | None = None, db_path: Path | None = None) -> int:
-    """Load recipes.csv into SQLite. Returns number of rows inserted."""
-    csv_path = csv_path or (PROJECT_ROOT / "data" / "recipes.csv")
-    db_path = Path(db_path or SQLITE_PATH)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    nutrition = parse_nutrition(row.get("nutrition"))
 
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Missing {csv_path}")
-
-    df = pd.read_csv(csv_path)
-    critical = ["recipe_name", "ingredients", "directions"]
-    df = df.dropna(subset=critical).copy()
-    df = df[df["recipe_name"].str.strip() != ""]
-    df = df[df["ingredients"].str.strip() != ""]
-    df = df[df["directions"].str.strip() != ""]
-
-    if "Unnamed: 0" in df.columns:
-        df["id"] = df["Unnamed: 0"].astype(int)
-    else:
-        df["id"] = df.index.astype(int)
-
-    if db_path.exists():
-        db_path.unlink()
-
-    with sqlite3.connect(db_path) as conn:
-        conn.executescript(SCHEMA)
-        for _, row in df.iterrows():
-            nutrition = parse_nutrition(row.get("nutrition"))
-            conn.execute(
-                """
-                INSERT INTO recipes (
-                    id, recipe_name, prep_time, cook_time, total_time,
-                    prep_time_min, cook_time_min, total_time_min,
-                    servings, yield_text, ingredients, directions,
-                    rating, url, cuisine_path, nutrition, timing, img_src,
-                    calories, protein_g, carbs_g, fat_g
-                ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-                )
-                """,
-                (
-                    int(row["id"]),
-                    str(row["recipe_name"]).strip(),
-                    _nullable_str(row.get("prep_time")),
-                    _nullable_str(row.get("cook_time")),
-                    _nullable_str(row.get("total_time")),
-                    time_to_minutes(row.get("prep_time")),
-                    time_to_minutes(row.get("cook_time")),
-                    time_to_minutes(row.get("total_time")),
-                    parse_servings(row.get("servings")),
-                    _nullable_str(row.get("yield")),
-                    str(row["ingredients"]).strip(),
-                    str(row["directions"]).strip(),
-                    float(row["rating"]) if pd.notna(row.get("rating")) else None,
-                    _nullable_str(row.get("url")),
-                    _nullable_str(row.get("cuisine_path")),
-                    _nullable_str(row.get("nutrition")),
-                    _nullable_str(row.get("timing")),
-                    _nullable_str(row.get("img_src")),
-                    nutrition.get("calories"),
-                    nutrition.get("protein_g"),
-                    nutrition.get("carbs_g"),
-                    nutrition.get("fat_g"),
-                ),
-            )
-        conn.commit()
-        count = conn.execute("SELECT COUNT(*) FROM recipes").fetchone()[0]
-
-    return int(count)
-
-
-def iter_recipes_for_indexing() -> list[Recipe]:
-    """Return all recipes from SQLite for Chroma indexing."""
-    with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM recipes ORDER BY id").fetchall()
-    return [_row_to_recipe(r) for r in rows]
-
+    conn.execute(
+        """
+        INSERT INTO recipes (
+            id, recipe_name, prep_time, cook_time, total_time,
+            prep_time_min, cook_time_min, total_time_min,
+            servings, yield_text, ingredients, directions,
+            rating, url, cuisine_path, nutrition, timing, img_src,
+            calories, protein_g, carbs_g, fat_g
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )
+        """,
+        (
+            int(row["id"]),
+            str(row["recipe_name"]).strip(),
+            _nullable_str(row.get("prep_time")),
+            _nullable_str(row.get("cook_time")),
+            _nullable_str(row.get("total_time")),
+            time_to_minutes(row.get("prep_time")),
+            time_to_minutes(row.get("cook_time")),
+            time_to_minutes(row.get("total_time")),
+            parse_servings(row.get("servings")),
+            _nullable_str(row.get("yield")),
+            str(row["ingredients"]).strip(),
+            str(row["directions"]).strip(),
+            float(row["rating"]) if pd.notna(row.get("rating")) else None,
+            _nullable_str(row.get("url")),
+            _nullable_str(row.get("cuisine_path")),
+            _nullable_str(row.get("nutrition")),
+            _nullable_str(row.get("timing")),
+            _nullable_str(row.get("img_src")),
+            nutrition.get("calories"),
+            nutrition.get("protein_g"),
+            nutrition.get("carbs_g"),
+            nutrition.get("fat_g"),
+        ),
+    )
 
 def _nullable_str(value: Any) -> str | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):
