@@ -248,6 +248,45 @@ async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
     # Fallback de seguridad (por si algo falló)
     yield "🍳 Ocurrió un error procesando tu consulta."
 
+def normalize_query(text: str) -> str:
+    """
+    Normalize a user query without changing its meaning.
+
+    Operations:
+    - Normalize Unicode characters.
+    - Remove control characters.
+    - Remove emojis and decorative symbols.
+    - Collapse repeated punctuation.
+    - Collapse multiple spaces.
+    - Trim whitespace.
+    """
+
+    if not text:
+        return ""
+
+    # Normalize Unicode representation
+    text = unicodedata.normalize("NFKC", text)
+
+    # Replace tabs/newlines with spaces
+    text = re.sub(r"[\r\n\t]+", " ", text)
+
+    # Remove emojis and most symbols while preserving letters,
+    # numbers and common punctuation.
+    text = re.sub(
+        r"[^\w\sáéíóúüñÁÉÍÓÚÜÑ.,!?;:()/%+\-]",
+        " ",
+        text,
+        flags=re.UNICODE,
+    )
+
+    # Collapse repeated punctuation
+    text = re.sub(r"([!?.,;:])\1+", r"\1", text)
+
+    # Collapse multiple spaces
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
 @dataclass
 class PipelineContext:
 
@@ -435,9 +474,24 @@ class ResponseHandler(Handler):
             f"{footer}"
         )
 
-pipeline = TranslationHandler()
+class NormalizeQueryHandler(Handler):
+    """
+    Clean the user query before any LLM or retrieval step.
+    """
+
+    async def process(
+        self,
+        context: PipelineContext,
+    ) -> None:
+
+        context.message_es = normalize_query(
+            context.message_es
+        )
+
+pipeline = NormalizeQueryHandler()
 
 pipeline \
+    .set_next(TranslationHandler()) \
     .set_next(QueryClassifierHandler()) \
     .set_next(ScalingHandler()) \
     .set_next(SubstitutionHandler()) \
