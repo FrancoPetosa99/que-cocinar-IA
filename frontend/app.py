@@ -92,7 +92,7 @@ async def stream_response(
     thread_id = _get_thread_id(request)
 
     history = history + [{"role": "user", "content": message}]
-    history = history + [{"role": "assistant", "content": ""}]
+    history = history + [{"role": "assistant", "content": "🍳 *Preparando la receta...*"}]
     yield history
 
     try:
