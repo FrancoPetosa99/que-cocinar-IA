@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import unicodedata
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ from backend.grounding import (
 )
 from backend.recipe_db import Recipe
 from backend.translation import (
+    present_recipe_in_spanish,
     translate_to_english,
     translate_to_spanish,
 )
@@ -466,7 +468,15 @@ class ResponseHandler(Handler):
             )
         )
 
-        body = await translate_to_spanish(context.response_en)
+        body = await present_recipe_in_spanish(
+            user_query=context.message_es,
+            recipe_name=context.recipe.recipe_name,
+            ingredients=context.recipe.ingredients,
+            directions=context.recipe.directions,
+            servings=context.recipe.servings,
+            prep_time=context.recipe.prep_time,
+            total_time=context.recipe.total_time,
+        )
 
         context.response_es = (
             f"{body}\n\n"
