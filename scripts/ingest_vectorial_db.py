@@ -8,10 +8,10 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-CSV_PATH = ROOT / "data" / "enriched_recipes.csv"
+CSV_PATH = ROOT / "data" / "enriched_recipes_spanish.csv"
 CHROMA_DIR = ROOT / "chroma_db" 
 COLLECTION_NAME = "recipes"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 BATCH_SIZE = 500
 
 def recipe_to_embedding_text(recipe: pd.Series) -> str:
