@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import unicodedata
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -212,7 +213,7 @@ async def search_ids_async(query: str, filters: dict) -> tuple[list[int], str | 
     return [], None
 
 async def stream_text_chunks(text: str) -> AsyncIterator[str]:
-    chunk_size = 40
+    chunk_size = 5
 
     if len(text) <= chunk_size:
         yield text
@@ -220,6 +221,7 @@ async def stream_text_chunks(text: str) -> AsyncIterator[str]:
 
     for i in range(chunk_size, len(text) + chunk_size, chunk_size):
         yield text[:i]
+        await asyncio.sleep(0.01)
 
 async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
     message_es = message.strip()
