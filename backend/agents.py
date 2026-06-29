@@ -77,7 +77,6 @@ Suggest 2-3 practical substitutes with:
 Respond in English only. Be concise and actionable.
 """
 
-
 @tool
 def recipe_retriever(
     query: str,
@@ -100,7 +99,6 @@ def recipe_retriever(
         min_protein=min_protein_g,
         max_calories=max_calories,
     )
-
 
 @tool
 def scaling_expert(
@@ -130,7 +128,6 @@ def scaling_expert(
     response = llm.invoke(prompt)
     return response.content
 
-
 @tool
 def substitution_expert(
     ingredient: str,
@@ -151,12 +148,10 @@ def substitution_expert(
     response = llm.invoke(prompt)
     return response.content
 
-
 TOOLS = [recipe_retriever, scaling_expert, substitution_expert]
 
 _checkpointer = MemorySaver()
 _agent = None
-
 
 def build_agent():
     """Create (or return cached) LangGraph ReAct agent with session memory."""
@@ -172,7 +167,6 @@ def build_agent():
         prompt=SystemMessage(content=SYSTEM_PROMPT),
     )
     return _agent
-
 
 def get_agent_config(thread_id: str) -> dict:
     """Return LangGraph config for a given session thread."""

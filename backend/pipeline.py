@@ -5,24 +5,17 @@ from __future__ import annotations
 import asyncio
 import re
 from typing import AsyncIterator
-
 from langchain_core.messages import HumanMessage
-
 from backend.agents import scaling_expert, substitution_expert
 from backend.config import get_llm
-from backend.database import (
-    RETRIEVAL_MAX_DISTANCE,
-    best_match_distance,
-    get_recipe_by_id,
-)
+from backend.database import RETRIEVAL_MAX_DISTANCE, best_match_distance, get_recipe_by_id
 from backend.grounding import RecipeSource, format_grounding_footer, validate_grounding
 from backend.recipe_db import Recipe
 from backend.translation import translate_to_english, translate_to_spanish
 from backend.vector_store import search_recipe_ids
+from backend.validate_query import classify_query
 
-NON_COOKING_MESSAGE = (
-    "🍳 Solo puedo ayudarte con recetas y temas relacionados con la cocina."
-)
+NON_COOKING_MESSAGE = "🍳 Solo puedo ayudarte con recetas y temas relacionados con la cocina."
 
 NO_RECIPES_MESSAGE = (
     "🍳 No encontré recetas en nuestra base que satisfagan tu consulta.\n\n"
@@ -55,14 +48,12 @@ SUBSTITUTION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-
 def is_cooking_query(message_es: str, message_en: str, thread_id: str) -> bool:
     if thread_id in _last_recipe_by_thread and (
         SCALING_PATTERN.search(message_es) or SUBSTITUTION_PATTERN.search(message_es)
     ):
         return True
     return bool(COOKING_HINTS.search(message_es) or COOKING_HINTS.search(message_en))
-
 
 def extract_filters(message_es: str, message_en: str) -> dict:
     msg = f"{message_es} {message_en}".lower()
@@ -87,7 +78,6 @@ def extract_filters(message_es: str, message_en: str) -> dict:
         filters["max_calories"] = 400
     return filters
 
-
 def _parse_target_servings(message_es: str) -> int | None:
     match = SCALING_PATTERN.search(message_es)
     if not match:
@@ -97,13 +87,11 @@ def _parse_target_servings(message_es: str) -> int | None:
             return int(group)
     return None
 
-
 def _format_directions(directions_text: str) -> str:
     steps = [s.strip() for s in re.split(r"\n+", directions_text) if s.strip()]
     if len(steps) <= 1:
         return directions_text.strip()
     return "\n".join(f"{i}. {step}" for i, step in enumerate(steps, 1))
-
 
 def format_recipe_from_sql(recipe: Recipe) -> str:
     """Build answer from SQLite row (English). Directions come from relational DB only."""
@@ -119,10 +107,8 @@ def format_recipe_from_sql(recipe: Recipe) -> str:
     lines.append(f"Verified source: csv_row_id={recipe.id} | name={recipe.recipe_name}")
     return "\n".join(lines)
 
-
 def _recipe_to_source(recipe: Recipe) -> RecipeSource:
     return RecipeSource(csv_row_id=recipe.id, recipe_name=recipe.recipe_name)
-
 
 async def _search_ids_async(message_en: str, filters: dict) -> tuple[list[int], str | None]:
     ids = await asyncio.to_thread(
@@ -145,10 +131,8 @@ async def _search_ids_async(message_en: str, filters: dict) -> tuple[list[int], 
         )
     return [], None
 
-
 def _audit_footer(response_en: str, sources: list[RecipeSource]) -> str:
     return format_grounding_footer(validate_grounding(response_en, sources))
-
 
 async def _stream_text_chunks(text: str) -> AsyncIterator[str]:
     chunk_size = 40
@@ -158,12 +142,10 @@ async def _stream_text_chunks(text: str) -> AsyncIterator[str]:
     for i in range(chunk_size, len(text) + chunk_size, chunk_size):
         yield text[:i]
 
-
 async def _translate_and_stream(english_text: str) -> AsyncIterator[str]:
     spanish = await translate_to_spanish(english_text)
     async for chunk in _stream_text_chunks(spanish):
         yield chunk
-
 
 async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
     message_es = message.strip()
@@ -172,7 +154,8 @@ async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
 
     message_en = await translate_to_english(message_es)
 
-    if not is_cooking_query(message_es, message_en, thread_id):
+    classification = await asyncio.to_thread(classify_query, message_en)
+    if not classification.valid:
         yield NON_COOKING_MESSAGE
         return
 
