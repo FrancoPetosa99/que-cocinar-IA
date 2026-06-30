@@ -61,13 +61,11 @@ EMBEDDING_MODEL = os.getenv(
 
 _llm_singleton: BaseChatModel | None = None
 
-
 def get_embeddings():
     """Return a HuggingFace embedding model (runs locally)."""
     from langchain_huggingface import HuggingFaceEmbeddings
 
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-
 
 def resolve_llm_model_path() -> str:
     """
@@ -88,7 +86,6 @@ def resolve_llm_model_path() -> str:
 
     return LLM_MODEL
 
-
 def _detect_torch_device() -> str:
     """Return 'cuda', 'mps', or 'cpu'."""
     import torch
@@ -107,7 +104,6 @@ def _detect_torch_device() -> str:
     if torch.backends.mps.is_available():
         return "mps"
     return "cpu"
-
 
 def get_llm(*, streaming: bool = True) -> BaseChatModel:
     """
@@ -147,12 +143,10 @@ def get_llm(*, streaming: bool = True) -> BaseChatModel:
         "Usá 'gemini' o 'huggingface'."
     )
 
-
 def preload_local_llm() -> None:
     """Load local HF model into memory (call at app startup)."""
     if LLM_PROVIDER == "huggingface" and HF_BACKEND == "local":
         get_llm(streaming=False)
-
 
 def _get_huggingface_llm(*, streaming: bool) -> BaseChatModel:
     """Build a HuggingFace-backed chat model (hosted API or local pipeline)."""
@@ -175,7 +169,6 @@ def _get_huggingface_llm(*, streaming: bool) -> BaseChatModel:
         streaming=streaming,
     )
     return ChatHuggingFace(llm=endpoint, verbose=True)
-
 
 def _get_huggingface_local_llm() -> BaseChatModel:
     """Load a causal LM from disk or Hugging Face Hub and run locally."""
@@ -217,7 +210,6 @@ def _get_huggingface_local_llm() -> BaseChatModel:
         llm.pipeline.model.to("mps")
 
     return ChatHuggingFace(llm=llm, verbose=True)
-
 
 def validate_chroma_exists() -> None:
     """Raise a clear error if the vector store has not been built yet."""

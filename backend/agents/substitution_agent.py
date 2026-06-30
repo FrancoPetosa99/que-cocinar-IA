@@ -34,7 +34,7 @@ def build_substitution_agent():
     llm = get_llm(streaming=False)
 
     _substitution_agent = create_react_agent(
-        llm,
+        model=llm,
         tools=[],
         prompt=SystemMessage(content=SUBSTITUTION_PROMPT),
     )

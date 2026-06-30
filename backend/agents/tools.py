@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
-from scaling_agent import build_scaling_agent
-from substitution_agent import build_substitution_agent
+from backend.agents.scaling_agent import build_scaling_agent
+from backend.agents.substitution_agent import build_substitution_agent
+
+from backend.vector_store import search_recipe_ids
 
 @tool
 def find_relevant_recipes(query: str) -> str:
@@ -31,6 +33,8 @@ def find_relevant_recipes(query: str) -> str:
 
     recipe_ids = search_recipe_ids(query=query, k=4)
 
+    print(recipe_ids)
+
     if not recipe_ids:
         return "No se encontraron recetas."
 
@@ -53,7 +57,7 @@ def find_relevant_recipes(query: str) -> str:
                 Proteínas: {recipe.protein}
                 Tiempo total: {recipe.total_time} minutos
                 Fuente verificada:
-                csv_row_id={recipe.id} | name={recipe.recipe_name}
+                recipe_id={recipe.id} | name={recipe.recipe_name}
             """.strip()
         )
     return "\n\n-----------------------------\n\n".join(recipes)

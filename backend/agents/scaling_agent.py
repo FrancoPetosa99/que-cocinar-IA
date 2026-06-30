@@ -34,7 +34,7 @@ def build_scaling_agent():
     llm = get_llm(streaming=False)
 
     _scaling_agent = create_react_agent(
-        llm,
+        model=llm,
         tools=[],
         prompt=SystemMessage(content=SCALING_PROMPT),
     )
