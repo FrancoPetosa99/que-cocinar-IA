@@ -64,7 +64,6 @@ SUBSTITUTION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-
 def extract_filters(message: str) -> dict:
     msg = message.lower()
 
@@ -114,7 +113,6 @@ def extract_filters(message: str) -> dict:
 
     return filters
 
-
 def parse_target_servings(message: str) -> int | None:
     match = SCALING_PATTERN.search(message)
 
@@ -126,7 +124,6 @@ def parse_target_servings(message: str) -> int | None:
             return int(value)
 
     return None
-
 
 def format_directions(directions: str) -> str:
     steps = [
@@ -143,7 +140,6 @@ def format_directions(directions: str) -> str:
         for i, step in enumerate(steps, 1)
     )
 
-
 def _format_meta_line(recipe: Recipe) -> str | None:
     parts: list[str] = []
     if recipe.total_time_min:
@@ -153,7 +149,6 @@ def _format_meta_line(recipe: Recipe) -> str | None:
     if recipe.servings:
         parts.append(f"🍽️ {recipe.servings} porciones")
     return " | ".join(parts) if parts else None
-
 
 def _ingredient_bullets(ingredients: str) -> list[str]:
     text = ingredients.strip()
@@ -167,12 +162,8 @@ def _ingredient_bullets(ingredients: str) -> list[str]:
 
     return [f"- {item}" for item in items]
 
-
 def format_recipe_from_sql(recipe: Recipe) -> str:
-    lines = [
-        f"¡Te recomiendo **{recipe.recipe_name}**! 🍳",
-        "",
-    ]
+    lines = [f"¡Te recomiendo **{recipe.recipe_name}**! 🍳", ""]
 
     if recipe.semantic_summary:
         lines.extend([recipe.semantic_summary, ""])
@@ -180,13 +171,6 @@ def format_recipe_from_sql(recipe: Recipe) -> str:
     meta = _format_meta_line(recipe)
     if meta:
         lines.extend([meta, ""])
-
-    if recipe.has_enriched_metadata() and recipe.main_ingredients:
-        lines.extend(["**Ingredientes principales:**", ""])
-        for item in re.split(r",\s*", recipe.main_ingredients):
-            if item.strip():
-                lines.append(f"- {item.strip()}")
-        lines.append("")
 
     lines.extend(["**Ingredientes:**", ""])
     lines.extend(_ingredient_bullets(recipe.ingredients))
@@ -200,7 +184,6 @@ def format_recipe_from_sql(recipe: Recipe) -> str:
     )
 
     return "\n".join(lines)
-
 
 async def search_ids_async(query: str, filters: dict) -> tuple[list[int], str | None]:
     ids = await asyncio.to_thread(
@@ -272,7 +255,6 @@ async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
 
     yield "🍳 Ocurrió un error procesando tu consulta."
 
-
 def normalize_query(text: str) -> str:
     """
     Normalize a user query without changing its meaning.
@@ -302,7 +284,6 @@ def normalize_query(text: str) -> str:
 
     return text.strip()
 
-
 @dataclass
 class PipelineContext:
 
@@ -323,7 +304,6 @@ class PipelineContext:
     response_es: str | None = None
 
     stop: bool = False
-
 
 class Handler(ABC):
 
@@ -349,7 +329,6 @@ class Handler(ABC):
     async def process(self, context: PipelineContext) -> None:
         ...
 
-
 class QueryClassifierHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
@@ -361,7 +340,6 @@ class QueryClassifierHandler(Handler):
         if not context.classification.valid:
             context.response_es = NON_COOKING_MESSAGE
             context.stop = True
-
 
 class ScalingHandler(Handler):
 
@@ -394,7 +372,6 @@ class ScalingHandler(Handler):
 
         context.stop = True
 
-
 class SubstitutionHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
@@ -415,7 +392,6 @@ class SubstitutionHandler(Handler):
         context.response_es = response
         context.stop = True
 
-
 class RetrievalHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
@@ -424,7 +400,6 @@ class RetrievalHandler(Handler):
             context.message_es,
             context.filters,
         )
-
 
 class DatabaseHandler(Handler):
 
@@ -451,12 +426,10 @@ class DatabaseHandler(Handler):
         context.recipe = recipe
         _last_recipe_by_thread[context.thread_id] = recipe
 
-
 class ResponseHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
         context.response_es = format_recipe_from_sql(context.recipe)
-
 
 class NormalizeQueryHandler(Handler):
     """Clean the user query before any LLM or retrieval step."""
@@ -464,13 +437,9 @@ class NormalizeQueryHandler(Handler):
     async def process(self, context: PipelineContext) -> None:
         context.message_es = normalize_query(context.message_es)
 
-
 pipeline = NormalizeQueryHandler()
 
 pipeline \
-    .set_next(QueryClassifierHandler()) \
-    .set_next(ScalingHandler()) \
-    .set_next(SubstitutionHandler()) \
-    .set_next(RetrievalHandler()) \
-    .set_next(DatabaseHandler()) \
+    .set_next(RetrievalHandler())   \
+    .set_next(DatabaseHandler())    \
     .set_next(ResponseHandler())
