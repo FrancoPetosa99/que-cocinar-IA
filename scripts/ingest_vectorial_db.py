@@ -53,7 +53,8 @@ def recipe_to_vector_document(recipe: pd.Series) -> Document:
     return Document(
         page_content=recipe_to_embedding_text(recipe),
         metadata={
-            "csv_row_id": int(recipe["recipe_id"])
+            "recipe_id": int(recipe["recipe_id"]),
+            "recipe_name": str(recipe["recipe_name"])
         }
     )
 
