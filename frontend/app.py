@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import sys
 import uuid
 from pathlib import Path
@@ -111,8 +110,21 @@ def create_app() -> gr.Blocks:
     english_roots = [
         root
         for root in cuisine_tree
-        if root in {"Desserts", "Cakes", "Cookies", "Bread", "Salad", "Seafood"}
-        or (root == label_cuisine_es(root) and re.fullmatch(r"[A-Za-z ,&':]+", root))
+        if root
+        in {
+            "Desserts",
+            "Cakes",
+            "Cookies",
+            "Bread",
+            "Salad",
+            "Seafood",
+            "Appetizers and Snacks",
+            "BBQ & Grilling",
+            "Breakfast and Brunch",
+            "Main Dishes",
+            "Side Dish",
+            "Soup Recipes",
+        }
     ]
     sample_roots = list(cuisine_tree.keys())[:5]
     if cuisine_tree:
@@ -362,7 +374,6 @@ if __name__ == "__main__":
     demo.queue().launch(
         theme=theme,
         css=KITCHEN_CSS,
-        show_api=False,
         favicon_path=str(PROJECT_ROOT / "assets" / "logo.png")
         if (PROJECT_ROOT / "assets" / "logo.png").exists()
         else None,
