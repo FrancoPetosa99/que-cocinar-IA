@@ -235,7 +235,6 @@ async def search_ids_async(query: str, filters: dict) -> tuple[list[int], str | 
 
     return [], None
 
-
 async def stream_text_chunks(text: str, *, delay_sec: float = 0.06) -> AsyncIterator[str]:
     """Yield the response section by section so the title appears immediately."""
     if not text:
@@ -252,7 +251,6 @@ async def stream_text_chunks(text: str, *, delay_sec: float = 0.06) -> AsyncIter
         yield buffer
         if delay_sec > 0:
             await asyncio.sleep(delay_sec)
-
 
 async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
     message_es = message.strip()
