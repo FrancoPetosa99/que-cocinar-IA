@@ -46,15 +46,16 @@ def search_recipes(
         k=k,
     )
     if not ids:
-        return "No matching recipes found in the database."
+        return "No se encontraron recetas en la base de datos."
 
     recipes = get_recipes_by_ids(ids)
     blocks = []
     for recipe in recipes:
         blocks.append(
             f"[csv_row_id={recipe.id}] **{recipe.recipe_name}**\n"
-            f"Time: {recipe.total_time_min or '?'} min | "
-            f"Servings: {recipe.servings or '?'} | Rating: {recipe.rating or 'N/A'}\n\n"
+            f"Tiempo: {recipe.total_time_min or '?'} min | "
+            f"Porciones: {recipe.servings or '?'} | "
+            f"Puntuación: {recipe.rating or 'N/A'}\n\n"
             f"{recipe.embedding_text()}"
         )
     return "\n\n---\n\n".join(blocks)
@@ -64,7 +65,7 @@ def get_csv_row_preview(csv_row_id: int) -> str:
     """Return key fields for audit/testing."""
     recipe = get_recipe_by_id(csv_row_id)
     if recipe is None:
-        return f"No row with csv_row_id={csv_row_id}"
+        return f"No hay fila con csv_row_id={csv_row_id}"
     return (
         f"csv_row_id={recipe.id}\n"
         f"recipe_name={recipe.recipe_name}\n"

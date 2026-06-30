@@ -6,48 +6,51 @@ from pydantic import BaseModel, ValidationError
 
 from backend.config import get_llm
 
+
 class QueryClassification(BaseModel):
     valid: bool
 
+
 CLASSIFIER_PROMPT = """
-You are a domain classifier for Qué Cocinar IA.
+Sos un clasificador de dominio para Qué Cocinar IA.
 
-Your task is to determine whether the user's request belongs to the cooking domain.
+Tu tarea es determinar si la consulta del usuario pertenece al dominio de la cocina.
 
-A VALID request includes:
+Una consulta VÁLIDA incluye:
 
-- recipes
-- ingredients
-- meals
-- cooking techniques
-- nutrition related to recipes
-- recipe scaling
-- ingredient substitutions
-- meal planning
-- baking
-- grilling
-- frying
-- kitchen utensils
-- food preparation
+- recetas
+- ingredientes
+- comidas
+- técnicas de cocina
+- nutrición relacionada con recetas
+- escalado de recetas
+- sustituciones de ingredientes
+- planificación de comidas
+- horneado
+- parrilla
+- fritura
+- utensilios de cocina
+- preparación de alimentos
 
-An INVALID request is anything unrelated to cooking.
+Una consulta INVÁLIDA es cualquier cosa no relacionada con la cocina.
 
-Return ONLY a valid JSON object.
+Devolvé SOLO un objeto JSON válido.
 
-Example:
+Ejemplo:
 {{
     "valid": true
 }}
 
-Rules:
-- Do not include explanations.
-- Do not use markdown.
-- Do not wrap the JSON in ```.
+Reglas:
+- No incluyas explicaciones.
+- No uses markdown.
+- No envuelvas el JSON en ```.
 
-User message:
+Mensaje del usuario:
 
 {message}
 """
+
 
 def _extract_json(text: str) -> dict:
     """
@@ -68,6 +71,7 @@ def _extract_json(text: str) -> dict:
     text = text.strip()
 
     return json.loads(text)
+
 
 def classify_query(message: str) -> QueryClassification:
     """

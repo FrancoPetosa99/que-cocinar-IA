@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import unicodedata
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -13,16 +14,7 @@ from backend.database import (
     best_match_distance,
     get_recipe_by_id,
 )
-from backend.grounding import (
-    RecipeSource,
-    format_grounding_footer,
-    validate_grounding,
-)
 from backend.recipe_db import Recipe
-from backend.translation import (
-    translate_to_english,
-    translate_to_spanish,
-)
 from backend.validate_query import (
     QueryClassification,
     classify_query,
@@ -72,8 +64,9 @@ SUBSTITUTION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-def extract_filters(message_es: str, message_en: str) -> dict:
-    msg = f"{message_es} {message_en}".lower()
+
+def extract_filters(message: str) -> dict:
+    msg = message.lower()
 
     filters: dict = {}
 
@@ -87,6 +80,7 @@ def extract_filters(message_es: str, message_en: str) -> dict:
             "quick",
             "fast",
             "hungry",
+            "hambre",
         )
     ):
         filters["max_total_time"] = 20
@@ -98,6 +92,7 @@ def extract_filters(message_es: str, message_en: str) -> dict:
             "proteina",
             "muscular",
             "athlete",
+            "atleta",
             "high protein",
         )
     ):
@@ -119,6 +114,7 @@ def extract_filters(message_es: str, message_en: str) -> dict:
 
     return filters
 
+
 def parse_target_servings(message: str) -> int | None:
     match = SCALING_PATTERN.search(message)
 
@@ -130,6 +126,7 @@ def parse_target_servings(message: str) -> int | None:
             return int(value)
 
     return None
+
 
 def format_directions(directions: str) -> str:
     steps = [
@@ -146,37 +143,64 @@ def format_directions(directions: str) -> str:
         for i, step in enumerate(steps, 1)
     )
 
+
+def _format_meta_line(recipe: Recipe) -> str | None:
+    parts: list[str] = []
+    if recipe.total_time_min:
+        parts.append(f"⏱️ {recipe.total_time_min} min")
+    elif recipe.total_time:
+        parts.append(f"⏱️ {recipe.total_time}")
+    if recipe.servings:
+        parts.append(f"🍽️ {recipe.servings} porciones")
+    return " | ".join(parts) if parts else None
+
+
+def _ingredient_bullets(ingredients: str) -> list[str]:
+    text = ingredients.strip()
+    if not text:
+        return []
+
+    if "\n" in text:
+        items = [line.strip() for line in text.splitlines() if line.strip()]
+    else:
+        items = [part.strip() for part in re.split(r",\s*", text) if part.strip()]
+
+    return [f"- {item}" for item in items]
+
+
 def format_recipe_from_sql(recipe: Recipe) -> str:
     lines = [
-        recipe.recipe_name,
-        "",
-        "Ingredients:",
+        f"¡Te recomiendo **{recipe.recipe_name}**! 🍳",
         "",
     ]
 
-    for ingredient in re.split(
-        r",\s*",
-        recipe.ingredients.strip(),
-    ):
-        if ingredient.strip():
-            lines.append(f"* {ingredient.strip()}")
+    if recipe.semantic_summary:
+        lines.extend([recipe.semantic_summary, ""])
 
+    meta = _format_meta_line(recipe)
+    if meta:
+        lines.extend([meta, ""])
+
+    if recipe.has_enriched_metadata() and recipe.main_ingredients:
+        lines.extend(["**Ingredientes principales:**", ""])
+        for item in re.split(r",\s*", recipe.main_ingredients):
+            if item.strip():
+                lines.append(f"- {item.strip()}")
+        lines.append("")
+
+    lines.extend(["**Ingredientes:**", ""])
+    lines.extend(_ingredient_bullets(recipe.ingredients))
     lines.extend(
         [
             "",
-            "Directions:",
+            "**Preparación:**",
             "",
             format_directions(recipe.directions),
-            "",
-            (
-                f"Verified source: "
-                f"csv_row_id={recipe.id} | "
-                f"name={recipe.recipe_name}"
-            ),
         ]
     )
 
     return "\n".join(lines)
+
 
 async def search_ids_async(query: str, filters: dict) -> tuple[list[int], str | None]:
     ids = await asyncio.to_thread(
@@ -203,23 +227,32 @@ async def search_ids_async(query: str, filters: dict) -> tuple[list[int], str | 
         return (
             [],
             (
-                f"\n\n_(Best match distance: {best:.2f}; "
-                f"max threshold: "
+                f"\n\n_(Distancia del mejor match: {best:.2f}; "
+                f"umbral máximo: "
                 f"{RETRIEVAL_MAX_DISTANCE})_"
             ),
         )
 
     return [], None
 
-async def stream_text_chunks(text: str) -> AsyncIterator[str]:
-    chunk_size = 40
 
-    if len(text) <= chunk_size:
+async def stream_text_chunks(text: str, *, delay_sec: float = 0.06) -> AsyncIterator[str]:
+    """Yield the response section by section so the title appears immediately."""
+    if not text:
+        return
+
+    paragraphs = [paragraph for paragraph in text.split("\n\n") if paragraph.strip()]
+    if not paragraphs:
         yield text
         return
 
-    for i in range(chunk_size, len(text) + chunk_size, chunk_size):
-        yield text[:i]
+    buffer = ""
+    for index, paragraph in enumerate(paragraphs):
+        buffer = paragraph if index == 0 else f"{buffer}\n\n{paragraph}"
+        yield buffer
+        if delay_sec > 0:
+            await asyncio.sleep(delay_sec)
+
 
 async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
     message_es = message.strip()
@@ -232,21 +265,15 @@ async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
         message_es=message_es,
     )
 
-    # Ejecutar pipeline completo
     await pipeline.handle(context)
 
-    # Si algún handler ya resolvió la respuesta, devolverla
     if context.response_es:
-
-        async for chunk in stream_text_chunks(
-            context.response_es
-        ):
+        async for chunk in stream_text_chunks(context.response_es):
             yield chunk
-
         return
 
-    # Fallback de seguridad (por si algo falló)
     yield "🍳 Ocurrió un error procesando tu consulta."
+
 
 def normalize_query(text: str) -> str:
     """
@@ -264,28 +291,19 @@ def normalize_query(text: str) -> str:
     if not text:
         return ""
 
-    # Normalize Unicode representation
     text = unicodedata.normalize("NFKC", text)
-
-    # Replace tabs/newlines with spaces
     text = re.sub(r"[\r\n\t]+", " ", text)
-
-    # Remove emojis and most symbols while preserving letters,
-    # numbers and common punctuation.
     text = re.sub(
         r"[^\w\sáéíóúüñÁÉÍÓÚÜÑ.,!?;:()/%+\-]",
         " ",
         text,
         flags=re.UNICODE,
     )
-
-    # Collapse repeated punctuation
     text = re.sub(r"([!?.,;:])\1+", r"\1", text)
-
-    # Collapse multiple spaces
     text = re.sub(r"\s+", " ", text)
 
     return text.strip()
+
 
 @dataclass
 class PipelineContext:
@@ -293,8 +311,6 @@ class PipelineContext:
     thread_id: str
 
     message_es: str
-
-    message_en: str | None = None
 
     classification: QueryClassification | None = None
 
@@ -306,11 +322,10 @@ class PipelineContext:
 
     threshold_hint: str | None = None
 
-    response_en: str | None = None
-
     response_es: str | None = None
 
     stop: bool = False
+
 
 class Handler(ABC):
 
@@ -336,22 +351,19 @@ class Handler(ABC):
     async def process(self, context: PipelineContext) -> None:
         ...
 
-class TranslationHandler(Handler):
-
-    async def process(self, context: PipelineContext) -> None:
-        context.message_en = await translate_to_english(context.message_es)
 
 class QueryClassifierHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
         context.classification = await asyncio.to_thread(
             classify_query,
-            context.message_en,
+            context.message_es,
         )
 
         if not context.classification.valid:
             context.response_es = NON_COOKING_MESSAGE
             context.stop = True
+
 
 class ScalingHandler(Handler):
 
@@ -377,16 +389,13 @@ class ScalingHandler(Handler):
             },
         )
 
-        response_en = (
+        context.response_es = (
             f"{scaled_recipe}\n\n"
-            f"Verified source: "
-            f"csv_row_id={recipe.id} | "
-            f"name={recipe.recipe_name}"
+            f"_Basado en: **{recipe.recipe_name}**_"
         )
 
-        context.response_es = await translate_to_spanish(response_en)
-
         context.stop = True
+
 
 class SubstitutionHandler(Handler):
 
@@ -397,35 +406,34 @@ class SubstitutionHandler(Handler):
         if not SUBSTITUTION_PATTERN.search(context.message_es):
             return
 
-        response_en = await asyncio.to_thread(
+        response = await asyncio.to_thread(
             substitution_expert.invoke,
             {
-                "ingredient": context.message_en,
+                "ingredient": context.message_es,
                 "dietary_constraint": "",
             },
         )
 
-        context.response_es = await translate_to_spanish(response_en)
-
+        context.response_es = response
         context.stop = True
+
 
 class RetrievalHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
-        context.filters = extract_filters(context.message_es, context.message_en)
-        (context.recipe_ids, context.threshold_hint, ) = await search_ids_async(context.message_en, context.filters)
+        context.filters = extract_filters(context.message_es)
+        context.recipe_ids, context.threshold_hint = await search_ids_async(
+            context.message_es,
+            context.filters,
+        )
+
 
 class DatabaseHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
         if not context.recipe_ids:
-            hint = ""
-
-            if context.threshold_hint:
-                hint = await translate_to_spanish(context.threshold_hint)
-
-            context.response_es = (NO_RECIPES_MESSAGE + hint)
-
+            hint = context.threshold_hint or ""
+            context.response_es = NO_RECIPES_MESSAGE + hint
             context.stop = True
             return
 
@@ -439,59 +447,29 @@ class DatabaseHandler(Handler):
                 "Ejecutá:\n"
                 "python data_preprocessing/ingest.py"
             )
-
             context.stop = True
             return
 
         context.recipe = recipe
-
         _last_recipe_by_thread[context.thread_id] = recipe
+
 
 class ResponseHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
-        context.response_en = format_recipe_from_sql(context.recipe)
+        context.response_es = format_recipe_from_sql(context.recipe)
 
-        sources = [
-            RecipeSource(
-                csv_row_id=context.recipe.id,
-                recipe_name=context.recipe.recipe_name,
-            )
-        ]
-
-        footer = format_grounding_footer(
-            validate_grounding(
-                context.response_en,
-                sources,
-            )
-        )
-
-        body = await translate_to_spanish(context.response_en)
-
-        context.response_es = (
-            f"{body}\n\n"
-            f"---\n"
-            f"{footer}"
-        )
 
 class NormalizeQueryHandler(Handler):
-    """
-    Clean the user query before any LLM or retrieval step.
-    """
+    """Clean the user query before any LLM or retrieval step."""
 
-    async def process(
-        self,
-        context: PipelineContext,
-    ) -> None:
+    async def process(self, context: PipelineContext) -> None:
+        context.message_es = normalize_query(context.message_es)
 
-        context.message_es = normalize_query(
-            context.message_es
-        )
 
 pipeline = NormalizeQueryHandler()
 
 pipeline \
-    .set_next(TranslationHandler()) \
     .set_next(QueryClassifierHandler()) \
     .set_next(ScalingHandler()) \
     .set_next(SubstitutionHandler()) \

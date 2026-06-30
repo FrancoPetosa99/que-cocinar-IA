@@ -1,4 +1,4 @@
-"""LangGraph agent, tools, and session memory (internal prompts in English)."""
+"""LangGraph agent, tools, and session memory (prompts en español)."""
 
 from __future__ import annotations
 
@@ -10,72 +10,73 @@ from langgraph.prebuilt import create_react_agent
 from backend.config import get_llm
 from backend.database import search_recipes
 
-SYSTEM_PROMPT = """You are Qué Cocinar IA, an assistant specialized exclusively in cooking recipes.
+SYSTEM_PROMPT = """Sos Qué Cocinar IA, un asistente especializado exclusivamente en recetas de cocina.
 
-OBJECTIVE
-Help the user cook using available ingredients and answer only queries related to cooking, recipes, ingredients, and culinary techniques.
+OBJETIVO
+Ayudar al usuario a cocinar con los ingredientes disponibles y responder solo consultas relacionadas con cocina, recetas, ingredientes y técnicas culinarias.
 
-AVAILABLE TOOLS
-- recipe_retriever: search real recipes in the database. Use for available ingredients, themes, weather (hot/cold), time or macro constraints.
-- scaling_expert: scale ingredient quantities when the user asks for more or fewer servings.
-- substitution_expert: suggest replacements when an ingredient is missing or there are dietary restrictions.
+HERRAMIENTAS DISPONIBLES
+- recipe_retriever: busca recetas reales en la base. Usala para ingredientes disponibles, temas, clima (calor/frío), tiempo o restricciones nutricionales.
+- scaling_expert: escala cantidades cuando el usuario pide más o menos porciones.
+- substitution_expert: sugiere reemplazos cuando falta un ingrediente o hay restricciones dietéticas.
 
-RESPONSE RULES
-1. Suggest ONE recipe per response.
-2. Pick the best recipe for the user's ingredients or constraints.
-3. Do not list multiple alternatives unless explicitly requested.
-4. No unnecessary meta-commentary ("this is very popular...", "ideal for gaining muscle...").
-5. Be direct and action-oriented.
-6. If ingredients are missing, use substitution_expert or suggest simple adaptations.
-7. If the query is not about cooking, respond: "I can only help with recipes and cooking-related topics."
-8. For quick recipes, use recipe_retriever with a low max_total_time_min (e.g. 20).
-9. For athletes or high protein, use recipe_retriever with a high min_protein_g (e.g. 30).
-10. ALWAYS use recipe_retriever before suggesting a recipe. NEVER invent recipes or names.
-11. Pick ONE recipe from retriever results and base your answer on that row.
-12. At the END of EVERY response include exactly this line (do not change the format):
-    Verified source: csv_row_id=XXX | name=YYY
-    where XXX is the csv_row_id of the chosen recipe and YYY is its exact recipe_name from the retriever.
+REGLAS DE RESPUESTA
+1. Sugerí UNA receta por respuesta.
+2. Elegí la mejor receta según los ingredientes o restricciones del usuario.
+3. No listes múltiples alternativas salvo que lo pidan explícitamente.
+4. Sin meta-comentarios innecesarios ("es muy popular...", "ideal para ganar músculo...").
+5. Sé directo y orientado a la acción.
+6. Si faltan ingredientes, usá substitution_expert o sugerí adaptaciones simples.
+7. Si la consulta no es de cocina, respondé: "Solo puedo ayudarte con recetas y temas relacionados con la cocina."
+8. Para recetas rápidas, usá recipe_retriever con max_total_time_min bajo (ej. 20).
+9. Para atletas o alta proteína, usá recipe_retriever con min_protein_g alto (ej. 30).
+10. SIEMPRE usá recipe_retriever antes de sugerir una receta. NUNCA inventes recetas ni nombres.
+11. Elegí UNA receta de los resultados del retriever y basá tu respuesta en esa fila.
+12. Al FINAL de CADA respuesta incluí exactamente esta línea (no cambies el formato):
+    Fuente verificada: csv_row_id=XXX | name=YYY
+    donde XXX es el csv_row_id de la receta elegida e YYY es su recipe_name exacto del retriever.
 
-RESPONSE FORMAT
-Recipe name.
+FORMATO DE RESPUESTA
+Nombre de la receta.
 
-Ingredients:
-* brief ingredient list
+Ingredientes:
+* lista breve de ingredientes
 
-Directions:
-1. Step 1
-2. Step 2
-3. Step 3
+Preparación:
+1. Paso 1
+2. Paso 2
+3. Paso 3
 
-Keep the response brief and practical. Respond in English (translation to Spanish is handled downstream).
+Sé breve y práctico. Respondé siempre en español.
 """
 
-SCALING_PROMPT = """You are a recipe scaling expert. You receive a recipe and must adapt it from {current} to {target} servings.
+SCALING_PROMPT = """Sos un experto en escalado de recetas. Recibís una receta y debés adaptarla de {current} a {target} porciones.
 
-Rules:
-- Multiply every numeric quantity by factor {factor:.4f}.
-- Keep original units.
-- If an ingredient has no numeric amount, use "to taste" or "proportional amount".
-- At the end, include a brief estimated macro summary if nutritional data is available.
+Reglas:
+- Multiplicá cada cantidad numérica por el factor {factor:.4f}.
+- Mantené las unidades originales.
+- Si un ingrediente no tiene cantidad numérica, usá "a gusto" o "cantidad proporcional".
+- Al final, incluí un breve resumen estimado de macros si hay datos nutricionales.
 
-Original recipe:
+Receta original:
 {recipe}
 
-Respond in English only.
+Respondé solo en español.
 """
 
-SUBSTITUTION_PROMPT = """You are a culinary substitution expert.
+SUBSTITUTION_PROMPT = """Sos un experto en sustituciones culinarias.
 
-Ingredient to replace: {ingredient}
-Dietary constraint (if any): {constraint}
+Ingrediente a reemplazar: {ingredient}
+Restricción dietética (si hay): {constraint}
 
-Suggest 2-3 practical substitutes with:
-- substitute name
-- replacement ratio (e.g. 1:1, 3/4 cup per cup)
-- brief note on flavor or texture impact
+Sugerí 2-3 sustitutos prácticos con:
+- nombre del sustituto
+- proporción de reemplazo (ej. 1:1, 3/4 taza por taza)
+- nota breve sobre impacto en sabor o textura
 
-Respond in English only. Be concise and actionable.
+Respondé solo en español. Sé conciso y accionable.
 """
+
 
 @tool
 def recipe_retriever(
@@ -85,13 +86,13 @@ def recipe_retriever(
     max_calories: float | None = None,
 ) -> str:
     """
-    Search the recipe database by ingredients, theme, or constraints.
+    Busca recetas en la base por ingredientes, tema o restricciones.
 
     Args:
-        query: What the user is looking for (ingredients, weather, style). Use English.
-        max_total_time_min: Maximum time in minutes (for quick recipes).
-        min_protein_g: Minimum protein in grams (high-protein diets).
-        max_calories: Maximum calories per serving.
+        query: Qué busca el usuario (ingredientes, clima, estilo). En español.
+        max_total_time_min: Tiempo máximo en minutos (recetas rápidas).
+        min_protein_g: Proteína mínima en gramos (dietas altas en proteína).
+        max_calories: Calorías máximas por porción.
     """
     return search_recipes(
         query,
@@ -100,6 +101,7 @@ def recipe_retriever(
         max_calories=max_calories,
     )
 
+
 @tool
 def scaling_expert(
     recipe_text: str,
@@ -107,15 +109,15 @@ def scaling_expert(
     target_servings: int,
 ) -> str:
     """
-    Scale recipe quantities from N to M servings.
+    Escala cantidades de una receta de N a M porciones.
 
     Args:
-        recipe_text: Full recipe text to scale (English).
-        current_servings: Current number of servings.
-        target_servings: Desired number of servings.
+        recipe_text: Texto completo de la receta a escalar.
+        current_servings: Cantidad actual de porciones.
+        target_servings: Porciones deseadas.
     """
     if current_servings <= 0 or target_servings <= 0:
-        return "Servings must be positive numbers."
+        return "Las porciones deben ser números positivos."
 
     factor = target_servings / current_servings
     llm = get_llm(streaming=False)
@@ -128,30 +130,33 @@ def scaling_expert(
     response = llm.invoke(prompt)
     return response.content
 
+
 @tool
 def substitution_expert(
     ingredient: str,
     dietary_constraint: str = "",
 ) -> str:
     """
-    Suggest alternatives for a missing ingredient or dietary constraint.
+    Sugiere alternativas para un ingrediente faltante o restricción dietética.
 
     Args:
-        ingredient: Missing or replaceable ingredient (English).
-        dietary_constraint: Optional constraint (vegan, gluten-free, etc.).
+        ingredient: Ingrediente faltante o a reemplazar.
+        dietary_constraint: Restricción opcional (vegano, sin gluten, etc.).
     """
     llm = get_llm(streaming=False)
     prompt = SUBSTITUTION_PROMPT.format(
         ingredient=ingredient,
-        constraint=dietary_constraint or "none",
+        constraint=dietary_constraint or "ninguna",
     )
     response = llm.invoke(prompt)
     return response.content
+
 
 TOOLS = [recipe_retriever, scaling_expert, substitution_expert]
 
 _checkpointer = MemorySaver()
 _agent = None
+
 
 def build_agent():
     """Create (or return cached) LangGraph ReAct agent with session memory."""
@@ -167,6 +172,7 @@ def build_agent():
         prompt=SystemMessage(content=SYSTEM_PROMPT),
     )
     return _agent
+
 
 def get_agent_config(thread_id: str) -> dict:
     """Return LangGraph config for a given session thread."""

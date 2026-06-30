@@ -1,27 +1,29 @@
 # Qué Cocinar IA
 
-Asistente de cocina con RAG en modo estricto: búsqueda vectorial en ChromaDB, datos completos en SQLite, traducción ES↔EN con LCEL, y chat con streaming en Gradio.
+Asistente de cocina con RAG en modo estricto: búsqueda vectorial en ChromaDB, datos completos en SQLite, pipeline en **español**, y chat con streaming en Gradio.
 
-El usuario escribe en **español**. El dataset está en **inglés**. El LLM **no inventa** la receta principal: solo traduce, escala porciones y sugiere sustituciones.
+El usuario escribe en **español**. Los embeddings y la metadata enriquecida están en **español** (`enriched_recipes_spanish.csv`). El LLM **no inventa** la receta principal: escala porciones y sugiere sustituciones cuando corresponde.
 
 ---
 
 ## Arquitectura dual
 
 ```
-data/recipes.csv
+data/recipes.csv + data/enriched_recipes_spanish.csv
        │
-       ├─ Fase 1 (ingest) ──► data/recipes.db     SQLite — fuente de verdad (fila completa)
+       ├─ Fase 1 (ingest) ──► data/recipes.db     SQLite — fuente de verdad (fila completa + metadata ES)
        │
-       └─ Fase 2 (ingest) ──► chroma_db/          Chroma — solo búsqueda (nombre + ingredientes)
+       └─ Fase 2 (ingest) ──► chroma_db/          Chroma — búsqueda semántica (documento en español)
 ```
 
 | Capa | Archivo | Rol | Qué guarda |
 |---|---|---|---|
-| **SQLite** | `data/recipes.db` | Fuente de verdad | `recipe_name`, `ingredients`, **`directions`**, tiempos, rating, nutrition, url… |
-| **ChromaDB** | `chroma_db/` | Búsqueda semántica | `page_content` = nombre + ingredientes; `metadata` = `csv_row_id`, tiempos, macros… |
+| **SQLite** | `data/recipes.db` | Fuente de verdad | `recipe_name`, `ingredients`, **`directions`**, tiempos, rating, nutrition, metadata enriquecida en español… |
+| **ChromaDB** | `chroma_db/` | Búsqueda semántica | `page_content` = documento enriquecido en español; `metadata` = `csv_row_id`, tiempos, macros… |
 
 **Principio:** Chroma devuelve solo **IDs** (`csv_row_id`). Con ese ID, SQLite entrega la receta completa.
+
+> **Nota:** Usá `data/recipes_spanish.csv` (generado con `scripts/translate_recipes_spanish.py`) para ingredientes y pasos en español. Si no existe, el ingest usa `recipes.csv` en inglés como respaldo.
 
 ---
 
@@ -30,27 +32,31 @@ data/recipes.csv
 ```
 que-cocinar-IA/
 ├── data/
-│   ├── recipes.csv                 # fuente original
-│   └── recipes.db                  # SQLite (generado por ingest, gitignored)
-├── chroma_db/                      # índice vectorial (generado por ingest, gitignored)
+│   ├── recipes.csv                     # fuente original (inglés)
+│   ├── recipes_spanish.csv             # recetas traducidas (generado)
+│   ├── enriched_recipes_spanish.csv    # metadata en español para búsqueda
+│   └── recipes.db                      # SQLite (generado por ingest, gitignored)
+├── chroma_db/                          # índice vectorial (generado por ingest, gitignored)
 ├── data_preprocessing/
-│   ├── ingest.py                   # CSV → SQLite + Chroma (recomendado)
-│   └── preprocessing.ipynb         # alternativa interactiva
+│   ├── ingest.py                       # CSV → SQLite + Chroma (recomendado)
+│   └── preprocessing.ipynb             # alternativa interactiva
 ├── backend/
-│   ├── config.py                   # .env, LLM/embeddings (Gemini o Hugging Face)
-│   ├── recipe_db.py                # SQLite: Recipe, get_recipe_by_id()
-│   ├── vector_store.py             # Chroma: search_recipe_ids()
-│   ├── database.py                 # fachada (IDs + SQL)
-│   ├── pipeline.py                 # orquestador principal (modo estricto)
-│   ├── translation.py              # LCEL ES ↔ EN
-│   ├── grounding.py                # auditoría de fuente
-│   ├── agents.py                   # herramientas scaling / substitution (LLM)
-│   └── recipe_parsing.py           # parsers compartidos (tiempos, nutrition)
+│   ├── config.py                       # .env, LLM/embeddings (Gemini o Hugging Face)
+│   ├── recipe_db.py                    # SQLite: Recipe, get_recipe_by_id()
+│   ├── vector_store.py                 # Chroma: search_recipe_ids()
+│   ├── database.py                     # fachada (IDs + SQL)
+│   ├── pipeline.py                     # orquestador principal (modo estricto)
+│   ├── grounding.py                    # auditoría de fuente
+│   ├── agents.py                       # herramientas scaling / substitution (LLM)
+│   └── recipe_parsing.py               # parsers compartidos (tiempos, nutrition)
 ├── frontend/
-│   └── app.py                      # UI Gradio con streaming
+│   └── app.py                          # UI Gradio con streaming
 ├── scripts/
-│   └── download_hf_model.py        # descarga modelo HF a models/
-├── models/                         # modelos locales (gitignored)
+│   ├── ingest_relational_db.py         # recipes_spanish + enriched → SQLite
+│   ├── ingest_vectorial_db.py          # enriched → Chroma
+│   ├── translate_recipes_spanish.py    # recipes.csv → recipes_spanish.csv
+│   └── download_hf_model.py            # descarga modelo HF a models/
+├── models/                             # modelos locales (gitignored)
 ├── requirements.txt
 └── .env
 ```
@@ -63,14 +69,13 @@ que-cocinar-IA/
 Usuario (ES)
     → frontend/app.py
     → pipeline.stream_query()
-        1. LCEL: traducir consulta a inglés
+        1. Normalizar consulta (español)
         2. ¿Es cocina? → si no, mensaje fijo
         3. Chroma: search_recipe_ids() → [329, 305, ...]
         4. Si no hay IDs → "No encontré recetas..."
         5. SQLite: get_recipe_by_id(329) → fila completa (con directions)
-        6. format_recipe_from_sql() → plantilla en inglés (sin LLM)
-        7. LCEL: traducir respuesta a español
-        8. Auditoría: verificar csv_row_id
+        6. format_recipe_from_sql() → plantilla en español (sin LLM)
+        7. Auditoría: verificar csv_row_id
     → Usuario (ES)
 ```
 
@@ -106,7 +111,7 @@ HF_DEVICE=auto              # auto | cpu | mps | cuda
 HF_MAX_NEW_TOKENS=512
 TEMPERATURE=0.3
 
-EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 CHROMA_DIR=chroma_db
 SQLITE_PATH=data/recipes.db
 RETRIEVAL_MAX_DISTANCE=1.35
@@ -140,7 +145,7 @@ Modelos sugeridos según tu hardware:
 
 | Modelo | Tamaño aprox. | Notas |
 |---|---|---|
-| `Qwen/Qwen2.5-1.5B-Instruct` | ~3 GB | Default, bueno para traducción |
+| `Qwen/Qwen2.5-1.5B-Instruct` | ~3 GB | Default, liviano |
 | `HuggingFaceTB/SmolLM2-1.7B-Instruct` | ~3 GB | Muy liviano |
 | `microsoft/Phi-3-mini-4k-instruct` | ~7 GB | Mejor calidad, más RAM |
 
@@ -165,7 +170,25 @@ HUGGINGFACEHUB_API_TOKEN=tu_token
 
 ## Indexar recetas
 
-Requisito: `data/recipes.csv` en el proyecto.
+Requisitos: `data/recipes.csv` y `data/enriched_recipes_spanish.csv` en el proyecto.
+
+### Traducir recetas a español (opcional, recomendado)
+
+```bash
+pip install argostranslate   # si aún no está instalado
+python scripts/translate_recipes_spanish.py
+```
+
+Genera `data/recipes_spanish.csv`. El ingest relacional lo usa automáticamente si existe.
+
+Opciones:
+
+```bash
+python scripts/translate_recipes_spanish.py --limit 10    # prueba con 10 filas
+python scripts/translate_recipes_spanish.py --resume    # continuar traducción parcial
+```
+
+### Indexar SQLite + Chroma
 
 ```bash
 python data_preprocessing/ingest.py
@@ -173,8 +196,8 @@ python data_preprocessing/ingest.py
 
 | Fase | Qué hace |
 |---|---|
-| 1 | `recipes.csv` → `data/recipes.db` (SQLite, 1.090 filas completas) |
-| 2 | SQLite → `chroma_db/` (solo nombre + ingredientes embeddeados) |
+| 1 | `recipes_spanish.csv` (o `recipes.csv`) + `enriched_recipes_spanish.csv` → `data/recipes.db` |
+| 2 | `enriched_recipes_spanish.csv` → `chroma_db/` (documentos en español embeddeados) |
 
 Opciones:
 
@@ -182,6 +205,8 @@ Opciones:
 python data_preprocessing/ingest.py --relational-only   # solo SQLite
 python data_preprocessing/ingest.py --vector-only       # solo Chroma (requiere SQLite previo)
 ```
+
+> **Importante:** Si cambiás `EMBEDDING_MODEL`, reconstruí Chroma con `ingest.py --vector-only` o el ingest completo.
 
 ---
 
@@ -216,22 +241,10 @@ Para la **receta principal**:
 
 El LLM solo interviene en:
 
-- Traducción ES ↔ EN (`translation.py`)
 - Escalado de porciones (`scaling_expert`)
 - Sustituciones de ingredientes (`substitution_expert`)
 
----
-
-## Traducción ES ↔ EN (LCEL)
-
-El dataset y los embeddings están en inglés. `backend/translation.py` usa:
-
-```
-TRANSLATE_TO_ENGLISH_PROMPT | llm | StrOutputParser()   # pre-búsqueda
-TRANSLATE_TO_SPANISH_PROMPT | llm | StrOutputParser()   # post-respuesta
-```
-
-Las líneas con `csv_row_id=` se preservan sin traducir.
+No hay traducción en runtime: consultas, embeddings, prompts y respuestas están en español.
 
 ---
 
@@ -240,7 +253,7 @@ Las líneas con `csv_row_id=` se preservan sin traducir.
 Cada respuesta incluye:
 
 ```
-Verified source: csv_row_id=329 | name=Chicken with Lemon-Caper Sauce
+Fuente verificada: csv_row_id=329 | name=Chicken with Lemon-Caper Sauce
 ```
 
 Y un bloque **Auditoría de fuente** con ✅ VERIFICADO o ⚠️ NO VERIFICADO.
@@ -255,9 +268,8 @@ Chroma devuelve **distancia L2** (no cosine similarity). **Más bajo = más simi
 
 | Consulta | Distancia típica | Resultado con umbral 1.35 |
 |---|---|---|
-| `chicken rice` | ~0.93 | ✅ Aceptada |
-| `pollo y arroz` | ~1.37 | ❌ Rechazada (match débil) |
-| consulta sin sentido | ~1.7+ | ❌ Rechazada |
+| `pollo y arroz` | ~0.9–1.2 | ✅ Aceptada |
+| consulta poco relacionada | ~1.5+ | ❌ Rechazada |
 
 - **Más estricto** → bajar (ej. `1.1`)
 - **Más permisivo** → subir (ej. `1.5`)
@@ -271,7 +283,7 @@ Chroma devuelve **distancia L2** (no cosine similarity). **Más bajo = más simi
 ```bash
 python -c "
 from backend.vector_store import search_recipe_ids
-print(search_recipe_ids('chicken rice', k=3))
+print(search_recipe_ids('pollo y arroz', k=3))
 "
 ```
 
@@ -292,7 +304,7 @@ print(format_recipe_from_sql(r)[:600])
 python -c "
 from backend.vector_store import search_recipe_ids
 from backend.recipe_db import get_recipe_by_id
-ids = search_recipe_ids('chicken', k=1)
+ids = search_recipe_ids('pollo', k=1)
 r = get_recipe_by_id(ids[0])
 print(f'ID={r.id} | {r.recipe_name} | directions={len(r.directions)} chars')
 "
@@ -324,4 +336,4 @@ Usadas por el pipeline en casos específicos (no para elegir la receta principal
 | `substitution_expert` | "No tengo huevo / alternativa vegana" |
 | `recipe_retriever` | Disponible para uso con agente ReAct; el flujo principal usa `pipeline.py` |
 
-Prompts internos en **inglés**. Respuesta al usuario en **español** (vía traducción).
+Prompts y respuestas en **español**.

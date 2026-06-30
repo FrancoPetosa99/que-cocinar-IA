@@ -256,6 +256,16 @@ body, .gradio-container {
     border: 1px solid var(--border-color) !important;
     border-radius: 12px !important;
     padding: 0.8rem !important;
+    overflow: visible !important;
+}
+
+#cuisine-sidebar .cuisine-sidebar-title,
+#cuisine-sidebar .cuisine-sidebar-title p {
+    overflow: visible !important;
+    text-overflow: unset !important;
+    white-space: normal !important;
+    padding: 0 0.15rem !important;
+    margin: 0 0 0.5rem !important;
 }
 
 #cuisine-sidebar .label-wrap {

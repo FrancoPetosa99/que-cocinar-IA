@@ -21,33 +21,33 @@ def recipe_to_embedding_text(recipe: pd.Series) -> str:
     """
 
     return f"""
-        Recipe:
-        {recipe["recipe_name"]}
+Receta:
+{recipe["recipe_name"]}
 
-        Meal Type:
-        {recipe["meal_type"]}
+Tipo de comida:
+{recipe["meal_type"]}
 
-        Taste:
-        {recipe["taste_profile"]}
+Sabor:
+{recipe["taste_profile"]}
 
-        Served Temperature:
-        {recipe["served_temperature"]}
+Temperatura de servicio:
+{recipe["served_temperature"]}
 
-        Season:
-        {recipe["season"]}
+Estación:
+{recipe["season"]}
 
-        Difficulty:
-        {recipe["difficulty"]}
+Dificultad:
+{recipe["difficulty"]}
 
-        Characteristics:
-        {recipe["characteristics"]}
+Características:
+{recipe["characteristics"]}
 
-        Main Ingredients:
-        {recipe["main_ingredients"]}
+Ingredientes principales:
+{recipe["main_ingredients"]}
 
-        Semantic Summary:
-        {recipe["semantic_summary"]}
-    """.strip()
+Resumen semántico:
+{recipe["semantic_summary"]}
+""".strip()
 
 def recipe_to_vector_document(recipe: pd.Series) -> Document:
     return Document(
@@ -112,8 +112,8 @@ def ingest_vector():
         )
 
     sample = vectorstore.similarity_search(
-        "cold refreshing fruit dessert",
-        k=1
+        "postre frío refrescante con fruta",
+        k=1,
     )[0]
 
     print("\nVerification")

@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from backend.config import PROJECT_ROOT, SQLITE_PATH
+from backend.config import SQLITE_PATH
 from backend.recipe_parsing import parse_nutrition, parse_servings, time_to_minutes
 
 SCHEMA = """
@@ -35,9 +35,29 @@ CREATE TABLE IF NOT EXISTS recipes (
     calories        REAL,
     protein_g       REAL,
     carbs_g         REAL,
-    fat_g           REAL
+    fat_g           REAL,
+    meal_type       TEXT,
+    taste_profile   TEXT,
+    served_temperature TEXT,
+    season          TEXT,
+    difficulty      TEXT,
+    main_ingredients TEXT,
+    characteristics TEXT,
+    semantic_summary TEXT
 );
 """
+
+ENRICHED_COLUMNS = (
+    "meal_type",
+    "taste_profile",
+    "served_temperature",
+    "season",
+    "difficulty",
+    "main_ingredients",
+    "characteristics",
+    "semantic_summary",
+)
+
 
 @dataclass
 class Recipe:
@@ -65,18 +85,66 @@ class Recipe:
     protein_g: float | None = None
     carbs_g: float | None = None
     fat_g: float | None = None
+    meal_type: str | None = None
+    taste_profile: str | None = None
+    served_temperature: str | None = None
+    season: str | None = None
+    difficulty: str | None = None
+    main_ingredients: str | None = None
+    characteristics: str | None = None
+    semantic_summary: str | None = None
+
+    def has_enriched_metadata(self) -> bool:
+        return bool(self.semantic_summary and self.main_ingredients)
 
     def embedding_text(self) -> str:
-        """Text indexed in Chroma (name + ingredients only)."""
-        return f"{self.recipe_name}\n\nIngredients:\n{self.ingredients}"
+        """Text indexed in Chroma (Spanish enriched document when available)."""
+        if self.has_enriched_metadata():
+            return f"""
+Receta:
+{self.recipe_name}
+
+Tipo de comida:
+{self.meal_type or ""}
+
+Sabor:
+{self.taste_profile or ""}
+
+Temperatura de servicio:
+{self.served_temperature or ""}
+
+Estación:
+{self.season or ""}
+
+Dificultad:
+{self.difficulty or ""}
+
+Características:
+{self.characteristics or ""}
+
+Ingredientes principales:
+{self.main_ingredients}
+
+Resumen semántico:
+{self.semantic_summary}
+""".strip()
+        return f"{self.recipe_name}\n\nIngredientes:\n{self.ingredients}"
 
     def full_text(self) -> str:
         """Full recipe text for scaling tools."""
         return (
             f"{self.recipe_name}\n\n"
-            f"Ingredients:\n{self.ingredients}\n\n"
-            f"Directions:\n{self.directions}"
+            f"Ingredientes:\n{self.ingredients}\n\n"
+            f"Preparación:\n{self.directions}"
         )
+
+
+def _row_get(row: sqlite3.Row, key: str) -> Any:
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return None
+
 
 def _row_to_recipe(row: sqlite3.Row) -> Recipe:
     return Recipe(
@@ -102,7 +170,16 @@ def _row_to_recipe(row: sqlite3.Row) -> Recipe:
         protein_g=row["protein_g"],
         carbs_g=row["carbs_g"],
         fat_g=row["fat_g"],
+        meal_type=_nullable_str(_row_get(row, "meal_type")),
+        taste_profile=_nullable_str(_row_get(row, "taste_profile")),
+        served_temperature=_nullable_str(_row_get(row, "served_temperature")),
+        season=_nullable_str(_row_get(row, "season")),
+        difficulty=_nullable_str(_row_get(row, "difficulty")),
+        main_ingredients=_nullable_str(_row_get(row, "main_ingredients")),
+        characteristics=_nullable_str(_row_get(row, "characteristics")),
+        semantic_summary=_nullable_str(_row_get(row, "semantic_summary")),
     )
+
 
 def get_connection() -> sqlite3.Connection:
     db_path = Path(SQLITE_PATH)
@@ -115,12 +192,14 @@ def get_connection() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def get_recipe_by_id(recipe_id: int) -> Recipe | None:
     with get_connection() as conn:
         row = conn.execute(
             "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
         ).fetchone()
     return _row_to_recipe(row) if row else None
+
 
 def get_recipes_by_ids(recipe_ids: list[int]) -> list[Recipe]:
     """Fetch recipes preserving the order of recipe_ids."""
@@ -135,6 +214,7 @@ def get_recipes_by_ids(recipe_ids: list[int]) -> list[Recipe]:
     by_id = {_row_to_recipe(r).id: _row_to_recipe(r) for r in rows}
     return [by_id[i] for i in recipe_ids if i in by_id]
 
+
 def insert_recipe(conn: sqlite3.Connection, row: pd.Series) -> None:
     """Inserta una receta en la base de datos."""
 
@@ -147,9 +227,12 @@ def insert_recipe(conn: sqlite3.Connection, row: pd.Series) -> None:
             prep_time_min, cook_time_min, total_time_min,
             servings, yield_text, ingredients, directions,
             rating, url, cuisine_path, nutrition, timing, img_src,
-            calories, protein_g, carbs_g, fat_g
+            calories, protein_g, carbs_g, fat_g,
+            meal_type, taste_profile, served_temperature, season,
+            difficulty, main_ingredients, characteristics, semantic_summary
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?
         )
         """,
         (
@@ -175,8 +258,17 @@ def insert_recipe(conn: sqlite3.Connection, row: pd.Series) -> None:
             nutrition.get("protein_g"),
             nutrition.get("carbs_g"),
             nutrition.get("fat_g"),
+            _nullable_str(row.get("meal_type")),
+            _nullable_str(row.get("taste_profile")),
+            _nullable_str(row.get("served_temperature")),
+            _nullable_str(row.get("season")),
+            _nullable_str(row.get("difficulty")),
+            _nullable_str(row.get("main_ingredients")),
+            _nullable_str(row.get("characteristics")),
+            _nullable_str(row.get("semantic_summary")),
         ),
     )
+
 
 def _nullable_str(value: Any) -> str | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -16,7 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.pipeline import stream_query
 from styles import KITCHEN_CSS
-from cuisine_tree import build_cuisine_tree
+from cuisine_tree import build_cuisine_tree, label_cuisine_es, resolve_recipes_csv_path
 
 
 def _warmup_backend() -> None:
@@ -55,12 +56,6 @@ EXAMPLES = [
     "Tengo tomate, queso y pan",
     "Solo tengo huevo y papa",
 ]
-
-# Árbol de categorías para el sidebar, construido a partir de cuisine_path
-# en data/recipes.csv. Es solo para UI: no afecta el flujo del chatbot.
-# Estructura: { categoria: { subcategoria: [RecipeEntry(name, image_url), ...] } }
-RECIPES_CSV_PATH = PROJECT_ROOT / "data" / "recipes.csv"
-CUISINE_TREE = build_cuisine_tree(RECIPES_CSV_PATH)
 
 _session_threads: dict[str, str] = {}
 
@@ -112,6 +107,27 @@ async def stream_response(
 
 def create_app() -> gr.Blocks:
     """Build the kitchen-themed Gradio interface."""
+    cuisine_tree = build_cuisine_tree(resolve_recipes_csv_path())
+    english_roots = [
+        root
+        for root in cuisine_tree
+        if root in {"Desserts", "Cakes", "Cookies", "Bread", "Salad", "Seafood"}
+        or (root == label_cuisine_es(root) and re.fullmatch(r"[A-Za-z ,&':]+", root))
+    ]
+    sample_roots = list(cuisine_tree.keys())[:5]
+    if cuisine_tree:
+        print(
+            f"✓ Sidebar: {len(cuisine_tree)} categorías "
+            f"(ej. {', '.join(sample_roots)})"
+        )
+        if english_roots:
+            print(
+                "⚠️ Sidebar: categorías sin traducir detectadas: "
+                f"{', '.join(english_roots[:5])}"
+            )
+    else:
+        print("⚠️ Sidebar: no se cargaron categorías (revisá data/recipes_spanish.csv)")
+
     kitchen_theme = gr.themes.Soft(
         primary_hue=gr.themes.colors.orange,
         secondary_hue=gr.themes.colors.green,
@@ -171,18 +187,22 @@ def create_app() -> gr.Blocks:
             with gr.Column(scale=1, min_width=220, elem_id="cuisine-sidebar-col") as sidebar_col:
                 sidebar_visible = gr.State(True)
                 with gr.Column(elem_id="cuisine-sidebar"):
-                    gr.Markdown("**🍽️ Categorías de recetas**")
+                    gr.Markdown(
+                        "**🍽️ Categorías de recetas**",
+                        elem_classes=["cuisine-sidebar-title"],
+                    )
 
                     subcat_fallback_buttons: list[tuple[gr.Button, str, str]] = []
                     recipe_galleries: list[tuple[gr.Gallery, list[str]]] = []
 
-                    if CUISINE_TREE:
-                        for root_category, subcategories in CUISINE_TREE.items():
-                            with gr.Accordion(root_category, open=False):
+                    if cuisine_tree:
+                        for root_category, subcategories in cuisine_tree.items():
+                            root_label = label_cuisine_es(root_category)
+                            with gr.Accordion(label=root_label, open=False):
                                 if subcategories:
                                     for subcat, recipes in subcategories.items():
                                         with gr.Accordion(
-                                            subcat,
+                                            label=label_cuisine_es(subcat),
                                             open=False,
                                             elem_classes=["cuisine-subcat-accordion"],
                                         ):
@@ -226,7 +246,7 @@ def create_app() -> gr.Blocks:
                                     subcat_fallback_buttons.append((btn, root_category, root_category))
                     else:
                         gr.Markdown(
-                            "_No se encontraron categorías (data/recipes.csv no disponible)._"
+                            "_No se encontraron categorías (data/recipes_spanish.csv no disponible)._"
                         )
 
             with gr.Column(scale=4):
@@ -339,4 +359,11 @@ def create_app() -> gr.Blocks:
 if __name__ == "__main__":
     _warmup_backend()
     demo, theme = create_app()
-    demo.queue().launch(theme=theme, css=KITCHEN_CSS)
+    demo.queue().launch(
+        theme=theme,
+        css=KITCHEN_CSS,
+        show_api=False,
+        favicon_path=str(PROJECT_ROOT / "assets" / "logo.png")
+        if (PROJECT_ROOT / "assets" / "logo.png").exists()
+        else None,
+    )
