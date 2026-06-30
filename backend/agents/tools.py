@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
-from backend.agents.scaling_agent import build_scaling_agent
-from backend.agents.substitution_agent import build_substitution_agent
+from scaling_agent import build_scaling_agent
+from substitution_agent import build_substitution_agent
 
 @tool
 def find_relevant_recipes(query: str) -> str:
@@ -101,7 +101,7 @@ def scale_recipe(recipe_text: str, current_servings: int, target_servings: int) 
     return result["messages"][-1].content
 
 @tool
-def substitute_ingredient(ingredient: str, dietary_constraint: str = "") -> str:
+def substitute_ingredients(ingredient: str, dietary_constraint: str = "") -> str:
     """
     Adapta una receta a una nueva cantidad de porciones.
 
@@ -121,7 +121,6 @@ def substitute_ingredient(ingredient: str, dietary_constraint: str = "") -> str:
     Returns:
         Una lista de sustitutos prácticos indicando, cuando sea posible,
         la proporción de reemplazo y el impacto esperado en el sabor o la textura.
-        
     """
 
     agent = build_substitution_agent()

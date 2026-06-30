@@ -8,10 +8,7 @@ from langgraph.prebuilt import create_react_agent
 
 from backend.config import get_llm
 
-from backend.tools.recipe_tool import find_relevant_recipes
-from backend.tools.scaling_tool import scale_recipe
-from backend.tools.substitution_tool import substitute_ingredient
-
+from tool import find_relevant_recipes, scale_recipe, substitute_ingredients
 
 SYSTEM_PROMPT = """
 Sos Qué Cocinar IA, un asistente especializado exclusivamente en recetas de cocina.
