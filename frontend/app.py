@@ -197,7 +197,7 @@ def create_app() -> gr.Blocks:
             # al chat sin mostrar ningún detalle previo.
             # ------------------------------------------------------------
             with gr.Column(scale=1, min_width=220, elem_id="cuisine-sidebar-col") as sidebar_col:
-                sidebar_visible = gr.State(True)
+                sidebar_visible = gr.State(False)
                 with gr.Column(elem_id="cuisine-sidebar"):
                     gr.Markdown(
                         "**🍽️ Categorías de recetas**",
