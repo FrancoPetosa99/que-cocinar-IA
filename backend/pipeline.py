@@ -214,9 +214,6 @@ async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
 
     context = PipelineContext(thread_id=thread_id, message_es=message_es)
 
-    print("#"*20)
-    print(context.response_es)
-
     await pipeline.handle(context)
     if context.response_es:
         async for chunk in stream_text_chunks(context.response_es):
@@ -378,9 +375,7 @@ class DatabaseHandler(Handler):
             return
 
         recipes = await asyncio.to_thread(get_recipes, context.recipe_ids)
-
-        print(len(recipes))
-
+        
         if recipes is None:
             context.response_es = (
                 "⚠️ Integridad de datos: "
