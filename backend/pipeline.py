@@ -3,23 +3,17 @@ from __future__ import annotations
 import asyncio
 import re
 import unicodedata
+import json
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
-from backend.agents import scaling_expert, substitution_expert
-from backend.database import (
-    RETRIEVAL_MAX_DISTANCE,
-    best_match_distance,
-    get_recipe_by_id,
-)
+from backend.database import RETRIEVAL_MAX_DISTANCE, best_match_distance, get_recipe_by_id
 from backend.recipe_db import Recipe
-from backend.validate_query import (
-    QueryClassification,
-    classify_query,
-)
+from backend.validate_query import QueryClassification, classify_query
 from backend.vector_store import search_recipe_ids
+from backend.agents.agent import build_agent, get_agent_config
 
 
 NON_COOKING_MESSAGE = (
@@ -67,7 +61,7 @@ SUBSTITUTION_PATTERN = re.compile(
 def extract_filters(message: str) -> dict:
     msg = message.lower()
 
-    filters: dict = {}
+    return {}
 
     if any(
         word in msg
@@ -162,29 +156,6 @@ def _ingredient_bullets(ingredients: str) -> list[str]:
 
     return [f"- {item}" for item in items]
 
-def format_recipe_from_sql(recipe: Recipe) -> str:
-    lines = [f"¡Te recomiendo **{recipe.recipe_name}**! 🍳", ""]
-
-    if recipe.semantic_summary:
-        lines.extend([recipe.semantic_summary, ""])
-
-    meta = _format_meta_line(recipe)
-    if meta:
-        lines.extend([meta, ""])
-
-    lines.extend(["**Ingredientes:**", ""])
-    lines.extend(_ingredient_bullets(recipe.ingredients))
-    lines.extend(
-        [
-            "",
-            "**Preparación:**",
-            "",
-            format_directions(recipe.directions),
-        ]
-    )
-
-    return "\n".join(lines)
-
 async def search_ids_async(query: str, filters: dict) -> tuple[list[int], str | None]:
     ids = await asyncio.to_thread(
         search_recipe_ids,
@@ -241,13 +212,12 @@ async def stream_query(message: str, thread_id: str) -> AsyncIterator[str]:
     if not message_es:
         return
 
-    context = PipelineContext(
-        thread_id=thread_id,
-        message_es=message_es,
-    )
+    context = PipelineContext(thread_id=thread_id, message_es=message_es)
+
+    print("#"*20)
+    print(context.response_es)
 
     await pipeline.handle(context)
-
     if context.response_es:
         async for chunk in stream_text_chunks(context.response_es):
             yield chunk
@@ -284,6 +254,57 @@ def normalize_query(text: str) -> str:
 
     return text.strip()
 
+def get_recipes(recipe_ids: list[int], k: int = 3) -> str:
+    recipes = []
+
+    for i in range(k):
+        recipe = get_recipe_by_id(recipe_ids[i])
+
+        if recipe is None:
+            continue
+
+        recipes.append(
+            {
+                "recipe_id": recipe.id,
+                "recipe_name": recipe.recipe_name,
+                "ingredients": recipe.ingredients,
+                "directions": recipe.directions,
+                "servings": recipe.servings,
+                "total_time": recipe.total_time,
+                "calories": recipe.calories,
+                "protein": recipe.protein_g,
+            }
+        )
+
+    return json.dumps(
+        recipes,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+def call_llm(query: str, context: str, thread_id: str) -> str:
+    agent = build_agent()
+
+    return agent.invoke(
+        {
+            "messages": [
+                (
+                    "user",
+                    f"""
+                    Consulta del usuario:
+
+                    {query}
+
+                    Recetas recuperadas de la base de datos:
+
+                    {context}
+                    """
+                )
+            ]
+        },
+        config=get_agent_config(thread_id)
+    )["messages"][-1].content
+
 @dataclass
 class PipelineContext:
 
@@ -297,7 +318,7 @@ class PipelineContext:
 
     recipe_ids: list[int] = field(default_factory=list)
 
-    recipe: Recipe | None = None
+    recipes: list[Recipe] | None = None
 
     threshold_hint: str | None = None
 
@@ -341,65 +362,11 @@ class QueryClassifierHandler(Handler):
             context.response_es = NON_COOKING_MESSAGE
             context.stop = True
 
-class ScalingHandler(Handler):
-
-    async def process(self, context: PipelineContext) -> None:
-        target_servings = parse_target_servings(context.message_es)
-
-        if target_servings is None:
-            return
-
-        if context.thread_id not in _last_recipe_by_thread:
-            return
-
-        recipe = _last_recipe_by_thread[context.thread_id]
-
-        current_servings = recipe.servings or 4
-
-        scaled_recipe = await asyncio.to_thread(
-            scaling_expert.invoke,
-            {
-                "recipe_text": recipe.full_text(),
-                "current_servings": int(current_servings),
-                "target_servings": target_servings,
-            },
-        )
-
-        context.response_es = (
-            f"{scaled_recipe}\n\n"
-            f"_Basado en: **{recipe.recipe_name}**_"
-        )
-
-        context.stop = True
-
-class SubstitutionHandler(Handler):
-
-    async def process(self, context: PipelineContext) -> None:
-        if parse_target_servings(context.message_es):
-            return
-
-        if not SUBSTITUTION_PATTERN.search(context.message_es):
-            return
-
-        response = await asyncio.to_thread(
-            substitution_expert.invoke,
-            {
-                "ingredient": context.message_es,
-                "dietary_constraint": "",
-            },
-        )
-
-        context.response_es = response
-        context.stop = True
-
 class RetrievalHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
         context.filters = extract_filters(context.message_es)
-        context.recipe_ids, context.threshold_hint = await search_ids_async(
-            context.message_es,
-            context.filters,
-        )
+        context.recipe_ids, context.threshold_hint = await search_ids_async(context.message_es, context.filters)
 
 class DatabaseHandler(Handler):
 
@@ -410,9 +377,11 @@ class DatabaseHandler(Handler):
             context.stop = True
             return
 
-        recipe = await asyncio.to_thread(get_recipe_by_id, context.recipe_ids[0])
+        recipes = await asyncio.to_thread(get_recipes, context.recipe_ids)
 
-        if recipe is None:
+        print(len(recipes))
+
+        if recipes is None:
             context.response_es = (
                 "⚠️ Integridad de datos: "
                 f"id {context.recipe_ids[0]} "
@@ -423,13 +392,13 @@ class DatabaseHandler(Handler):
             context.stop = True
             return
 
-        context.recipe = recipe
-        _last_recipe_by_thread[context.thread_id] = recipe
+        context.recipes = recipes
+        _last_recipe_by_thread[context.thread_id] = recipes
 
 class ResponseHandler(Handler):
 
     async def process(self, context: PipelineContext) -> None:
-        context.response_es = format_recipe_from_sql(context.recipe)
+        context.response_es = call_llm(query=context.message_es, context=context.recipes, thread_id=context.thread_id)
 
 class NormalizeQueryHandler(Handler):
     """Clean the user query before any LLM or retrieval step."""
